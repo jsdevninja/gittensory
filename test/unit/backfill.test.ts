@@ -620,6 +620,37 @@ describe("GitHub backfill", () => {
     expect(failed.repos[0]).toMatchObject({ status: "error", errorSummary: expect.stringContaining("GitHub API failed") });
   });
 
+  it("falls back to unauthenticated REST when the public token receives a scoped 404", async () => {
+    const env = createTestEnv({ GITHUB_PUBLIC_TOKEN: "public-token" });
+    await upsertRepositoryFromGitHub(env, {
+      name: "gittensory",
+      full_name: "JSONbored/gittensory",
+      private: false,
+      default_branch: "main",
+      owner: { login: "JSONbored" },
+    });
+    const labelAuthHeaders: Array<string | null> = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const auth = new Headers(init?.headers).get("authorization");
+      if (url === "https://api.github.com/graphql") {
+        return githubTotalsResponse({ openIssues: 0, openPullRequests: 0, mergedPullRequests: 0, closedPullRequests: 0, labels: 1 });
+      }
+      if (url.includes("/labels?")) {
+        labelAuthHeaders.push(auth);
+        if (auth === "Bearer public-token") return new Response("", { status: 404 });
+        return Response.json([{ name: "signal", color: "00ff00", description: "Signal" }]);
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    const result = await backfillRepositorySegment(env, { repoFullName: "JSONbored/gittensory", segment: "labels", mode: "full" });
+
+    expect(result).toMatchObject({ status: "complete", fetchedCount: 1, expectedCount: 1 });
+    expect(labelAuthHeaders).toEqual(["Bearer public-token", null]);
+    expect(await listRepoLabels(env, "JSONbored/gittensory")).toEqual([expect.objectContaining({ name: "signal" })]);
+  });
+
   it("paginates beyond the first GitHub page and stores complete segment fidelity", async () => {
     const env = createTestEnv({ GITHUB_PUBLIC_TOKEN: "public-token" });
     await seedRegisteredRepo(env);

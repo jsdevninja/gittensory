@@ -1577,15 +1577,13 @@ async function githubJsonWithHeaders<T>(
   token?: string,
 ): Promise<{ data: T; link: string | null; etag: string | null; lastModified: string | null }> {
   const { owner, name } = repoParts(repoFullName);
-  const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}${path}`, {
-    headers: {
-      accept: "application/vnd.github+json",
-      "user-agent": "gittensory/0.1",
-      "x-github-api-version": "2022-11-28",
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-    },
-  });
+  const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}${path}`;
+  let response = await fetch(url, { headers: githubRestHeaders(token) });
   await recordGitHubResponse(env, repoFullName, path, response, "rest");
+  if (response.status === 404 && token && token === env.GITHUB_PUBLIC_TOKEN) {
+    response = await fetch(url, { headers: githubRestHeaders() });
+    await recordGitHubResponse(env, repoFullName, path, response, "rest");
+  }
   if (!response.ok) {
     const body = await response.text();
     throw new GitHubApiError(
@@ -1600,6 +1598,15 @@ async function githubJsonWithHeaders<T>(
     link: response.headers.get("link"),
     etag: response.headers.get("etag"),
     lastModified: response.headers.get("last-modified"),
+  };
+}
+
+function githubRestHeaders(token?: string): HeadersInit {
+  return {
+    accept: "application/vnd.github+json",
+    "user-agent": "gittensory/0.1",
+    "x-github-api-version": "2022-11-28",
+    ...(token ? { authorization: `Bearer ${token}` } : {}),
   };
 }
 
