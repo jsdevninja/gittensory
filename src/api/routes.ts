@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { z } from "zod";
 import { createSessionFromGitHubToken, pollGitHubDeviceFlow, startGitHubDeviceFlow } from "../auth/github-oauth";
 import { enforceRateLimit, routeClassForPath } from "../auth/rate-limit";
-import { authenticateInternalToken, authenticatePrivateToken, authenticateSessionToken, extractBearerToken, revokeSession } from "../auth/security";
+import { authenticateInternalToken, authenticatePrivateToken, authenticateSessionToken, extractBearerToken, revokeSession, type AuthIdentity } from "../auth/security";
 import { normalizeGittBountySnapshot } from "../bounties/ingest";
 import {
   countOpenIssues,
@@ -391,6 +391,10 @@ export function createApp() {
     const body = await c.req.json().catch(() => null);
     const parsed = scorePreviewSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: "invalid_scoring_preview_request", issues: parsed.error.issues }, 400);
+    if (parsed.data.contributorLogin) {
+      const unauthorized = await requireContributorAccess(c, parsed.data.contributorLogin);
+      if (unauthorized) return unauthorized;
+    }
     const [repo, snapshot, evidence] = await Promise.all([
       getRepository(c.env, parsed.data.repoFullName),
       getOrCreateScoringModelSnapshot(c.env),
@@ -634,6 +638,8 @@ export function createApp() {
   });
 
   app.get("/v1/repos/:owner/:repo/pulls/:number/maintainer-packet", async (c) => {
+    const unauthorized = await requireStaticProtectedApiToken(c);
+    if (unauthorized) return unauthorized;
     const fullName = `${c.req.param("owner")}/${c.req.param("repo")}`;
     const number = Number(c.req.param("number"));
     if (!Number.isFinite(number)) return c.json({ error: "invalid_pull_number" }, 400);
@@ -704,6 +710,8 @@ export function createApp() {
 
   app.get("/v1/contributors/:login/decision-pack", async (c) => {
     const login = c.req.param("login");
+    const unauthorized = await requireContributorAccess(c, login);
+    if (unauthorized) return unauthorized;
     const serving = await loadContributorDecisionPackForServing(c.env, login);
     if (serving.kind === "ready") return c.json(serving.pack);
     return c.json(serving.refresh, 202);
@@ -711,6 +719,8 @@ export function createApp() {
 
   app.get("/v1/contributors/:login/repos/:owner/:repo/decision", async (c) => {
     const login = c.req.param("login");
+    const unauthorized = await requireContributorAccess(c, login);
+    if (unauthorized) return unauthorized;
     const fullName = `${c.req.param("owner")}/${c.req.param("repo")}`;
     const serving = await loadContributorDecisionPackForServing(c.env, login);
     if (serving.kind === "needs_refresh") {
@@ -762,6 +772,8 @@ export function createApp() {
     const body = await c.req.json().catch(() => null);
     const parsed = localBranchAnalysisSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: "invalid_local_branch_analysis_request", issues: parsed.error.issues }, 400);
+    const unauthorized = await requireContributorAccess(c, parsed.data.login);
+    if (unauthorized) return unauthorized;
     const [context, repo, issues, pullRequests, recentMergedPullRequests, snapshot, issueQuality] = await Promise.all([
       loadContributorFastContext(c.env, parsed.data.login),
       getRepository(c.env, parsed.data.repoFullName),
@@ -796,6 +808,8 @@ export function createApp() {
     const body = await c.req.json().catch(() => null);
     const parsed = agentRunSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: "invalid_agent_run_request", issues: parsed.error.issues }, 400);
+    const unauthorized = await requireContributorAccess(c, parsed.data.actorLogin);
+    if (unauthorized) return unauthorized;
     const bundle = await startAgentRun(c.env, parsed.data);
     return c.json(bundle, 202);
   });
@@ -803,6 +817,8 @@ export function createApp() {
   app.get("/v1/agent/runs/:id", async (c) => {
     const bundle = await getAgentRunBundle(c.env, c.req.param("id"));
     if (!bundle) return c.json({ error: "agent_run_not_found" }, 404);
+    const unauthorized = await requireContributorAccess(c, bundle.run.actorLogin);
+    if (unauthorized) return unauthorized;
     return c.json(bundle);
   });
 
@@ -810,6 +826,8 @@ export function createApp() {
     const body = await c.req.json().catch(() => null);
     const parsed = agentPlanSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: "invalid_agent_plan_request", issues: parsed.error.issues }, 400);
+    const unauthorized = await requireContributorAccess(c, parsed.data.login);
+    if (unauthorized) return unauthorized;
     const bundle = await planNextWork(c.env, parsed.data);
     return c.json(bundle, bundle.run.status === "needs_snapshot_refresh" ? 202 : 200);
   });
@@ -818,6 +836,8 @@ export function createApp() {
     const body = await c.req.json().catch(() => null);
     const parsed = localBranchAnalysisSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: "invalid_agent_preflight_branch_request", issues: parsed.error.issues }, 400);
+    const unauthorized = await requireContributorAccess(c, parsed.data.login);
+    if (unauthorized) return unauthorized;
     const bundle = await preflightBranchWithAgent(c.env, parsed.data);
     return c.json(bundle);
   });
@@ -826,6 +846,8 @@ export function createApp() {
     const body = await c.req.json().catch(() => null);
     const parsed = localBranchAnalysisSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: "invalid_agent_prepare_pr_packet_request", issues: parsed.error.issues }, 400);
+    const unauthorized = await requireContributorAccess(c, parsed.data.login);
+    if (unauthorized) return unauthorized;
     const bundle = await preparePrPacketWithAgent(c.env, parsed.data);
     return c.json(bundle);
   });
@@ -834,6 +856,8 @@ export function createApp() {
     const body = await c.req.json().catch(() => null);
     const parsed = agentExplainBlockersSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: "invalid_agent_explain_blockers_request", issues: parsed.error.issues }, 400);
+    const unauthorized = await requireContributorAccess(c, parsed.data.login);
+    if (unauthorized) return unauthorized;
     const bundle = await explainBlockersWithAgent(c.env, parsed.data);
     return c.json(bundle, bundle.run.status === "needs_snapshot_refresh" ? 202 : 200);
   });
@@ -1366,6 +1390,30 @@ function contributorEvidenceFromProfile(profile: {
       credibilityAssumption: profile.evidence.credibilityAssumption,
     },
   };
+}
+
+type ProtectedRouteContext = {
+  env: Env;
+  req: { header: (name: string) => string | undefined | null };
+  json: (object: { error: string }, status?: number) => Response;
+};
+
+async function authenticateRequestIdentity(c: ProtectedRouteContext): Promise<AuthIdentity | null> {
+  return authenticatePrivateToken(c.env, extractBearerToken(c.req.header("authorization")));
+}
+
+async function requireStaticProtectedApiToken(c: ProtectedRouteContext): Promise<Response | null> {
+  const identity = await authenticateRequestIdentity(c);
+  if (!identity) return c.json({ error: "unauthorized" }, 401);
+  if (identity.kind === "session") return c.json({ error: "static_token_required" }, 403);
+  return null;
+}
+
+async function requireContributorAccess(c: ProtectedRouteContext, login: string): Promise<Response | null> {
+  const identity = await authenticateRequestIdentity(c);
+  if (!identity) return c.json({ error: "unauthorized" }, 401);
+  if (identity.kind === "session" && identity.actor.toLowerCase() !== login.toLowerCase()) return c.json({ error: "forbidden_contributor" }, 403);
+  return null;
 }
 
 function requiresApiToken(path: string): boolean {
