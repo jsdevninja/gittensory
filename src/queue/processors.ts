@@ -129,6 +129,8 @@ import {
   unionScopedOverlapClusters,
 } from "../signals/engine";
 import { decidePublicSurface } from "../signals/settings-preview";
+import { loadRepoFocusManifest } from "../signals/focus-manifest-loader";
+import { resolveEffectiveSettings } from "../signals/focus-manifest";
 import type { LocalBranchAnalysisInput } from "../signals/local-branch";
 import type { ContributorEvidenceRecord, GitHubWebhookPayload, JobMessage, JsonValue, PullRequestRecord, RepositorySettings } from "../types";
 import { sha256Hex } from "../utils/crypto";
@@ -695,7 +697,7 @@ async function processGitHubWebhook(env: Env, deliveryId: string, eventName: str
       const pr = await upsertPullRequestFromGitHub(env, repoFullName, payload.pull_request);
       const [repo, settings, otherOpenPullRequests] = await Promise.all([
         getRepository(env, repoFullName),
-        getRepositorySettings(env, repoFullName),
+        resolveRepositorySettings(env, repoFullName),
         listOtherOpenPullRequests(env, repoFullName, pr.number),
       ]);
       const advisory = buildPullRequestAdvisory(repo, pr, {
@@ -780,7 +782,10 @@ function shouldProcessPullRequestPublicSurface(action: string | undefined): bool
   return PR_PUBLIC_SURFACE_ACTIONS.has(action ?? "") || PR_GATE_CLOSED_ACTIONS.has(action ?? "");
 }
 
-function gateCheckPolicy(settings: RepositorySettings, readinessScore?: number | null, confirmedContributor?: boolean) {
+export function gateCheckPolicy(settings: RepositorySettings, readinessScore?: number | null, confirmedContributor?: boolean) {
+  // `settings` is already the EFFECTIVE config (`.gittensory.yml` > DB > defaults), resolved upstream by
+  // resolveRepositorySettings, so the blocker modes here reflect the repo's config file directly.
+  // confirmedContributor governs WHO can be blocked, downstream in evaluateGateCheck.
   return {
     linkedIssueGateMode: settings.linkedIssueGateMode,
     duplicatePrGateMode: settings.duplicatePrGateMode,
@@ -789,6 +794,16 @@ function gateCheckPolicy(settings: RepositorySettings, readinessScore?: number |
     readinessScore: readinessScore ?? null,
     confirmedContributor,
   };
+}
+
+/**
+ * Effective repository settings for webhook handling: the DB-backed settings overlaid with the repo's
+ * `.gittensory.yml` (config-as-code). This single resolver is why EVERYTHING — gate on/off, all blocker
+ * modes, comments, labels, surface, audience — is controllable from the repo's config file.
+ */
+async function resolveRepositorySettings(env: Env, repoFullName: string): Promise<RepositorySettings> {
+  const [dbSettings, manifest] = await Promise.all([getRepositorySettings(env, repoFullName), loadRepoFocusManifest(env, repoFullName)]);
+  return resolveEffectiveSettings(dbSettings, manifest);
 }
 
 function linkedIssueDuplicatePullRequestsForGate(pr: PullRequestRecord, pullRequests: PullRequestRecord[]): number[] {
@@ -850,6 +865,9 @@ async function maybePublishPrPublicSurface(
   webhook: { deliveryId: string; authorType?: string | undefined; action?: string | undefined },
 ): Promise<void> {
   const author = pr.authorLogin ?? null;
+  // `settings` is the EFFECTIVE config (`.gittensory.yml` > DB > defaults), resolved by the caller via
+  // resolveRepositorySettings — so gate on/off and every blocker mode already reflect the repo's config
+  // file. The gate only chooses what to do; confirmedContributor governs WHO can be blocked.
   const gateEnabled = settings.gateCheckMode === "enabled" && Boolean(advisory.headSha);
   // Cheap, network-free skip checks (also avoids the miner lookup when it would be wasted).
   const prelim = decidePublicSurface({
@@ -967,8 +985,7 @@ async function maybePublishPrPublicSurface(
   // detection) gets a neutral, non-blocking gate. Gate-only runs still verify confirmation before
   // evaluating blockers so confirmed contributors cannot bypass a required Gate check.
   const confirmedContributor = official?.status === "confirmed";
-  const gateEvaluation =
-    settings.gateCheckMode === "enabled" ? evaluateGateCheck(advisory, gateCheckPolicy(settings, readiness.total, confirmedContributor)) : undefined;
+  const gateEvaluation = gateEnabled ? evaluateGateCheck(advisory, gateCheckPolicy(settings, readiness.total, confirmedContributor)) : undefined;
   if (gateEnabled) {
     const gateCheckResult = await createOrUpdateGateCheckRun(
       env,
@@ -1030,7 +1047,10 @@ async function maybePublishPrPublicSurface(
   }
 
   if (decision.willComment) {
-    const commentArgs = { repo, pr, profile, detection, queueHealth, collisions, preflight, settings, gate: gateEvaluation };
+    // Maintainer review-content overrides from `.gittensory.yml` (footer text, row toggles, intro note).
+    // Cached, so this is a DB read after the settings resolution already loaded the manifest.
+    const reviewConfig = (await loadRepoFocusManifest(env, repoFullName)).review;
+    const commentArgs = { repo, pr, profile, detection, queueHealth, collisions, preflight, settings, gate: gateEvaluation, review: reviewConfig };
     const deterministicBody = buildPublicPrIntelligenceComment(commentArgs);
     try {
       await createOrUpdatePrIntelligenceComment(env, installationId, repoFullName, pr.number, deterministicBody);
@@ -1161,7 +1181,7 @@ async function maybeProcessPrPanelRetrigger(env: Env, deliveryId: string, payloa
     await recordPrPanelRetriggerSkip(env, deliveryId, repoFullName, targetKey, actor, "missing_repo_pr_or_installation");
     return true;
   }
-  const [pr, settings] = await Promise.all([getPullRequest(env, repoFullName, issue.number), getRepositorySettings(env, repoFullName)]);
+  const [pr, settings] = await Promise.all([getPullRequest(env, repoFullName, issue.number), resolveRepositorySettings(env, repoFullName)]);
   if (!pr) {
     await recordPrPanelRetriggerSkip(env, deliveryId, repoFullName, targetKey, actor, "cached_pr_missing");
     return true;
@@ -1352,7 +1372,7 @@ async function maybeProcessGittensoryMentionCommand(env: Env, deliveryId: string
     return true;
   }
 
-  const [repo, cachedPullRequest, settings] = await Promise.all([getRepository(env, repoFullName), getPullRequest(env, repoFullName, issue.number), getRepositorySettings(env, repoFullName)]);
+  const [repo, cachedPullRequest, settings] = await Promise.all([getRepository(env, repoFullName), getPullRequest(env, repoFullName, issue.number), resolveRepositorySettings(env, repoFullName)]);
   const pullRequestAuthor = cachedPullRequest?.authorLogin ?? issue.user?.login ?? null;
   const needsMinerDetection = commandAuthorizationNeedsMinerDetection({
     policy: settings.commandAuthorization,

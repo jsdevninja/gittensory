@@ -36,6 +36,17 @@ testExpectations:
 
 issueDiscoveryPolicy: discouraged
 
+# Authoritative gate config, config-as-code (layered OVER dashboard repository settings:
+# .gittensory.yml > DB settings > safe defaults). ONLY confirmed Gittensor contributors are ever
+# hard-blocked (see PR #644); these fields only choose what the gate does, not who it applies to.
+gate:
+  # enabled: false             # set false to disable the gate from config (turning it on is a dashboard setting)
+  linkedIssue: advisory        # block | advisory | off — issues aren't always available; advise, don't block
+  duplicates: block            # block | advisory | off — block obvious duplicate PRs
+  readiness:
+    mode: advisory             # block | advisory | off — readiness-score floor
+    minScore: 60
+
 publicNotes:
   - Prefer backend Workers, MCP, GitHub App, registry, and scoring work when scope allows.
   - Focused control-panel UI changes are welcome when they use live API data or honest empty/error states and tie to safety, release readiness, or operator-facing analytics.

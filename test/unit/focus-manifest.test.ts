@@ -3,12 +3,17 @@ import {
   buildFocusManifestGuidance,
   compileFocusManifestPolicy,
   deriveContributionLanes,
+  gateConfigToJson,
   isFocusManifestPublicSafe,
   matchesManifestPath,
   parseFocusManifest,
   parseFocusManifestContent,
+  resolveEffectiveSettings,
+  reviewConfigToJson,
+  settingsOverrideToJson,
   type FocusManifest,
 } from "../../src/signals/focus-manifest";
+import type { RepositorySettings } from "../../src/types";
 
 const FULL_MANIFEST = {
   source: "repo_file",
@@ -395,6 +400,9 @@ describe("compileFocusManifestPolicy", () => {
       issueDiscoveryPolicy: "neutral",
       maintainerNotes: [],
       publicNotes: ["Keep PRs focused.", "Maximize your reward payout"],
+      gate: { present: false, enabled: null, linkedIssue: null, duplicates: null, readinessMode: null, readinessMinScore: null },
+      settings: {},
+      review: { present: false, footerText: null, note: null, fields: {} },
       warnings: [],
     });
     expect(policy.publicSafe.entryGuidance).toContain("Keep PRs focused.");
@@ -673,5 +681,197 @@ describe("public-safe invariant", () => {
       const guidance = buildFocusManifestGuidance({ manifest, changedPaths });
       expect(guidance.publicNextSteps.every(isFocusManifestPublicSafe)).toBe(true);
     }
+  });
+});
+
+describe("parseFocusManifest gate config", () => {
+  it("parses a full gate section including the readiness block", () => {
+    const m = parseFocusManifest({ gate: { linkedIssue: "block", duplicates: "advisory", readiness: { mode: "block", minScore: 70 } } });
+    expect(m.present).toBe(true);
+    expect(m.gate).toEqual({ present: true, enabled: null, linkedIssue: "block", duplicates: "advisory", readinessMode: "block", readinessMinScore: 70 });
+  });
+
+  it("parses gate.enabled (on/off) and ignores non-boolean values with a warning", () => {
+    expect(parseFocusManifest({ gate: { enabled: true } }).gate.enabled).toBe(true);
+    expect(parseFocusManifest({ gate: { enabled: false } }).gate.enabled).toBe(false);
+    expect(parseFocusManifest({ gate: { enabled: true } }).gate.present).toBe(true);
+    const bad = parseFocusManifest({ gate: { enabled: "yes" } });
+    expect(bad.gate.enabled).toBeNull();
+    expect(bad.warnings.some((w) => /gate\.enabled/.test(w))).toBe(true);
+  });
+
+  it("treats a manifest with ONLY a gate section as present", () => {
+    const m = parseFocusManifest({ gate: { duplicates: "block" } });
+    expect(m.present).toBe(true);
+    expect(m.gate.present).toBe(true);
+    expect(m.gate.duplicates).toBe("block");
+  });
+
+  it("leaves unset gate fields null so the resolver falls back to DB settings", () => {
+    const m = parseFocusManifest({ gate: { linkedIssue: "advisory" } });
+    expect(m.gate.linkedIssue).toBe("advisory");
+    expect(m.gate.duplicates).toBeNull();
+    expect(m.gate.readinessMode).toBeNull();
+    expect(m.gate.readinessMinScore).toBeNull();
+  });
+
+  it("ignores invalid gate values with a warning rather than throwing", () => {
+    const m = parseFocusManifest({ gate: { linkedIssue: "sometimes", duplicates: 5, readiness: { mode: "nope", minScore: "high" } } });
+    expect(m.gate.linkedIssue).toBeNull();
+    expect(m.gate.duplicates).toBeNull();
+    expect(m.gate.readinessMode).toBeNull();
+    expect(m.gate.readinessMinScore).toBeNull();
+    expect(m.gate.present).toBe(false);
+    expect(m.warnings.some((w) => /gate\.linkedIssue/.test(w))).toBe(true);
+    expect(m.warnings.some((w) => /gate\.readiness\.mode/.test(w))).toBe(true);
+  });
+
+  it("clamps and rounds the readiness minScore to 0-100", () => {
+    expect(parseFocusManifest({ gate: { readiness: { minScore: 250 } } }).gate.readinessMinScore).toBe(100);
+    expect(parseFocusManifest({ gate: { readiness: { minScore: -10 } } }).gate.readinessMinScore).toBe(0);
+    expect(parseFocusManifest({ gate: { readiness: { minScore: 59.6 } } }).gate.readinessMinScore).toBe(60);
+  });
+
+  it("ignores a non-mapping gate or readiness block with a warning", () => {
+    const m1 = parseFocusManifest({ gate: ["nope"] });
+    expect(m1.gate.present).toBe(false);
+    expect(m1.warnings.some((w) => /"gate" must be a mapping/.test(w))).toBe(true);
+    const m2 = parseFocusManifest({ gate: { readiness: "nope" } });
+    expect(m2.gate.present).toBe(false);
+    expect(m2.warnings.some((w) => /"gate\.readiness" must be a mapping/.test(w))).toBe(true);
+  });
+
+  it("round-trips through gateConfigToJson + parse (the cache path) and serializes empty as null", () => {
+    const original = parseFocusManifest({ gate: { enabled: false, linkedIssue: "block", readiness: { mode: "advisory", minScore: 42 } } });
+    const reparsed = parseFocusManifest({ gate: gateConfigToJson(original.gate) });
+    expect(reparsed.gate).toEqual(original.gate);
+    expect(gateConfigToJson(parseFocusManifest({}).gate)).toBeNull();
+  });
+
+  it("parses the gate section from YAML content", () => {
+    const m = parseFocusManifestContent("gate:\n  duplicates: block\n  readiness:\n    mode: block\n    minScore: 80\n", "repo_file");
+    expect(m.gate.duplicates).toBe("block");
+    expect(m.gate.readinessMode).toBe("block");
+    expect(m.gate.readinessMinScore).toBe(80);
+  });
+});
+
+describe("parseFocusManifest settings override + resolveEffectiveSettings", () => {
+  it("parses a comprehensive settings: block", () => {
+    const m = parseFocusManifest({
+      settings: {
+        commentMode: "all_prs",
+        publicAudienceMode: "gittensor_only",
+        publicSignalLevel: "minimal",
+        checkRunMode: "enabled",
+        checkRunDetailLevel: "deep",
+        gateCheckMode: "enabled",
+        linkedIssueGateMode: "block",
+        duplicatePrGateMode: "off",
+        qualityGateMode: "advisory",
+        qualityGateMinScore: 65,
+        autoLabelEnabled: false,
+        gittensorLabel: "gittensor",
+        createMissingLabel: true,
+        publicSurface: "comment_only",
+        includeMaintainerAuthors: true,
+        requireLinkedIssue: true,
+        backfillEnabled: false,
+        privateTrustEnabled: true,
+      },
+    });
+    expect(m.present).toBe(true);
+    expect(m.settings).toEqual({
+      commentMode: "all_prs",
+      publicAudienceMode: "gittensor_only",
+      publicSignalLevel: "minimal",
+      checkRunMode: "enabled",
+      checkRunDetailLevel: "deep",
+      gateCheckMode: "enabled",
+      linkedIssueGateMode: "block",
+      duplicatePrGateMode: "off",
+      qualityGateMode: "advisory",
+      qualityGateMinScore: 65,
+      autoLabelEnabled: false,
+      gittensorLabel: "gittensor",
+      createMissingLabel: true,
+      publicSurface: "comment_only",
+      includeMaintainerAuthors: true,
+      requireLinkedIssue: true,
+      backfillEnabled: false,
+      privateTrustEnabled: true,
+    });
+  });
+
+  it("drops invalid settings values with warnings and keeps the valid ones", () => {
+    const m = parseFocusManifest({
+      settings: { commentMode: "loud", qualityGateMinScore: "high", autoLabelEnabled: "yes", gittensorLabel: "   ", publicSurface: "comment_only" },
+    });
+    expect(m.settings).toEqual({ publicSurface: "comment_only" });
+    expect(m.warnings.some((w) => /settings\.commentMode/.test(w))).toBe(true);
+    expect(m.warnings.some((w) => /settings\.qualityGateMinScore/.test(w))).toBe(true);
+    expect(m.warnings.some((w) => /settings\.autoLabelEnabled/.test(w))).toBe(true);
+    expect(m.warnings.some((w) => /settings\.gittensorLabel/.test(w))).toBe(true);
+  });
+
+  it("ignores a non-mapping settings block and treats a settings-only manifest as present", () => {
+    expect(parseFocusManifest({ settings: ["nope"] }).warnings.some((w) => /"settings" must be a mapping/.test(w))).toBe(true);
+    expect(parseFocusManifest({ settings: { commentMode: "off" } }).present).toBe(true);
+  });
+
+  it("round-trips settings through settingsOverrideToJson and serializes empty as null", () => {
+    const original = parseFocusManifest({ settings: { commentMode: "all_prs", qualityGateMinScore: 40 } });
+    const reparsed = parseFocusManifest({ settings: settingsOverrideToJson(original.settings) });
+    expect(reparsed.settings).toEqual(original.settings);
+    expect(settingsOverrideToJson(parseFocusManifest({}).settings)).toBeNull();
+  });
+
+  it("resolveEffectiveSettings overlays settings: over DB and lets gate: win for gate fields", () => {
+    const db = { commentMode: "off", gateCheckMode: "off", linkedIssueGateMode: "off", duplicatePrGateMode: "off", autoLabelEnabled: true } as unknown as RepositorySettings;
+    const eff = resolveEffectiveSettings(
+      db,
+      parseFocusManifest({ settings: { commentMode: "all_prs", linkedIssueGateMode: "advisory", autoLabelEnabled: false }, gate: { enabled: true, linkedIssue: "block" } }),
+    );
+    expect(eff.commentMode).toBe("all_prs"); // settings: override
+    expect(eff.autoLabelEnabled).toBe(false); // settings: override (boolean)
+    expect(eff.gateCheckMode).toBe("enabled"); // gate.enabled
+    expect(eff.linkedIssueGateMode).toBe("block"); // gate: wins over settings:
+  });
+});
+
+describe("parseFocusManifest review config", () => {
+  it("parses footer text, field toggles, and a note", () => {
+    const m = parseFocusManifest({ review: { footer: { text: "Reviewed by the Acme bot." }, fields: { relatedWork: false, gateResult: true }, note: "Run npm test before pushing." } });
+    expect(m.present).toBe(true);
+    expect(m.review.footerText).toBe("Reviewed by the Acme bot.");
+    expect(m.review.note).toBe("Run npm test before pushing.");
+    expect(m.review.fields).toEqual({ relatedWork: false, gateResult: true });
+  });
+
+  it("drops footer/note content that is not public-safe, with a warning", () => {
+    const m = parseFocusManifest({ review: { footer: { text: "Estimate your reward payout here" }, note: "paste your wallet hotkey" } });
+    expect(m.review.footerText).toBeNull();
+    expect(m.review.note).toBeNull();
+    expect(m.warnings.some((w) => /review\.footer\.text.*public-safe/.test(w))).toBe(true);
+    expect(m.warnings.some((w) => /review\.note.*public-safe/.test(w))).toBe(true);
+  });
+
+  it("ignores invalid field toggles and non-mapping footer/fields with warnings", () => {
+    const m = parseFocusManifest({ review: { footer: ["nope"], fields: "nope" } });
+    expect(m.review.present).toBe(false);
+    expect(m.warnings.some((w) => /"review\.footer" must be a mapping/.test(w))).toBe(true);
+    expect(m.warnings.some((w) => /"review\.fields" must be a mapping/.test(w))).toBe(true);
+    const m2 = parseFocusManifest({ review: { fields: { gateResult: "yes" } } });
+    expect(m2.review.fields).toEqual({});
+    expect(m2.warnings.some((w) => /review\.fields\.gateResult/.test(w))).toBe(true);
+  });
+
+  it("ignores a non-mapping review block, treats a review-only manifest as present, and round-trips", () => {
+    expect(parseFocusManifest({ review: ["nope"] }).warnings.some((w) => /"review" must be a mapping/.test(w))).toBe(true);
+    const original = parseFocusManifest({ review: { footer: { text: "Custom." }, fields: { openPrQueue: false }, note: "Note." } });
+    expect(original.present).toBe(true);
+    const reparsed = parseFocusManifest({ review: reviewConfigToJson(original.review) });
+    expect(reparsed.review).toEqual(original.review);
+    expect(reviewConfigToJson(parseFocusManifest({}).review)).toBeNull();
   });
 });

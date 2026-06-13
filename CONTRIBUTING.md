@@ -189,6 +189,29 @@ Public GitHub surfaces:
 - Keep public comments advisory, sanitized, and low-noise.
 - Keep labels limited to configured labels for officially confirmed Gittensor miner PRs.
 - Never publish private reviewability, scoring, wallet, hotkey, or reward/risk context.
+- The Gittensory Gate blocks **only confirmed Gittensor contributors**; every other author (and any
+  app/infra state) resolves to a neutral, non-blocking gate. Adding a blocker must keep it
+  confirmed-contributor-gated through `evaluateGateCheck`.
+
+Config as code (`.gittensory.yml`) — every repository setting is controllable from the config file:
+
+- **`settings:`** is a partial of the repository settings: any behaviour a maintainer can toggle in the
+  dashboard can be set here as code — `commentMode`, `publicAudienceMode`, `publicSurface`, `checkRunMode`,
+  `gateCheckMode`, the gate-blocker modes, `autoLabelEnabled`, `gittensorLabel`, `requireLinkedIssue`,
+  `backfillEnabled`, etc.
+- **`gate:`** is a friendly typed alias for the gate subset — `enabled` (on/off), `linkedIssue`,
+  `duplicates`, `readiness: { mode, minScore }` (each `off | advisory | block`).
+- **`review:`** customizes the public review-panel CONTENT: `footer: { text }` (custom lead copy — the
+  Gittensor register link + attribution are always appended), `note` (a custom intro line), and
+  `fields: { <row>: false }` to show/hide individual panel rows (`linkedIssue`, `relatedWork`, `reviewLoad`,
+  `validationEvidence`, `openPrQueue`, `contributorContext`, `gateResult`). Maintainer text that fails the
+  public-safe filter (reward/score/wallet/hotkey/etc.) is dropped, never published.
+- Precedence: `.gittensory.yml` `gate:` > `.gittensory.yml` `settings:` > dashboard repository settings >
+  safe defaults; unset fields fall back to the next layer. The committed root `.gittensory.yml` is the
+  worked example. Resolved once in `resolveRepositorySettings`, so the whole app honours the file.
+- The config chooses **what** gittensory does (gate on/off, blockers, comments, labels, surface, panel
+  content); it never changes **who** can be blocked — only confirmed Gittensor contributors are ever
+  hard-blocked, and the footer's Gittensor attribution/register link always remains.
 
 ## Commit And PR Titles
 
