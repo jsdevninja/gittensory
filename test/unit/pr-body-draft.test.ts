@@ -230,12 +230,12 @@ describe("buildPublicPrBodyDraft — source-upload guard", () => {
     expect(section(draft, "Tests run").join(" ")).toContain("[local path]");
   });
 
-  it("lists the private analysis fields it deliberately excludes", () => {
+  it("lists excluded internal analysis categories using public-safe labels", () => {
     const draft = buildPublicPrBodyDraft(source());
     expect(draft.excludedPrivateFields).toEqual([...EXCLUDED_PRIVATE_PR_BODY_FIELDS]);
     // The exclusion list itself stays public-safe (no private/financial terms).
     expect(JSON.stringify(draft.excludedPrivateFields)).not.toMatch(FORBIDDEN_PUBLIC_LANGUAGE);
-    expect(draft.excludedPrivateFields.join(" ")).toMatch(/score|risk|eligibility/i);
+    expect(draft.excludedPrivateFields.join(" ")).toMatch(/analysis|signals|readiness|actions/i);
   });
 });
 
