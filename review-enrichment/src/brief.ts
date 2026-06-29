@@ -24,6 +24,7 @@ import { scanTyposquat } from "./analyzers/typosquat.js";
 import { scanCommitSignature } from "./analyzers/commit-signature.js";
 import { scanIacMisconfig } from "./analyzers/iac-misconfig.js";
 import { scanNativeBuild } from "./analyzers/native-build.js";
+import { scanHistory } from "./analyzers/history.js";
 import { renderBrief } from "./render.js";
 import { captureAnalyzerDegradation } from "./sentry.js";
 
@@ -50,6 +51,7 @@ const ANALYZERS: Record<keyof BriefFindings, AnalyzerFn> = {
   commitSignature: (req, signal) => scanCommitSignature(req, fetch, { signal }),
   iacMisconfig: (req, signal) => scanIacMisconfig(req, signal),
   nativeBuild: (req, signal) => scanNativeBuild(req, fetch, { signal }),
+  history: (req, signal) => scanHistory(req, fetch, { signal }),
 };
 
 function runWithTimeout<T>(
