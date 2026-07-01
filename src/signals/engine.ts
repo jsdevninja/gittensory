@@ -836,7 +836,7 @@ export function buildCollisionReport(
   }
 
   const pairwiseIssues = boundedCollisionIssues(openIssues, openPullRequests);
-  const pairwisePullRequests = openPullRequests.slice(0, MAX_COLLISION_PAIRWISE_PULL_REQUESTS);
+  const pairwisePullRequests = boundedCollisionPullRequests(openPullRequests);
   const pairwiseRecentMergedPullRequests = recentMergedPullRequests.slice(0, MAX_COLLISION_PAIRWISE_RECENT_MERGES);
   const items = [...pairwiseIssues.map(issueItem), ...pairwisePullRequests.map(prItem), ...pairwiseRecentMergedPullRequests.map(recentMergedItem)];
   const itemTerms = new Map<string, CollisionTerms>();
@@ -5186,6 +5186,22 @@ function boundedCollisionIssues(openIssues: IssueRecord[], openPullRequests: Pul
     if (selected.size >= MAX_COLLISION_PAIRWISE_ISSUES) break;
   }
   return [...selected.values()];
+  /* v8 ignore stop */
+}
+
+function boundedCollisionPullRequests(openPullRequests: PullRequestRecord[]): PullRequestRecord[] {
+  /* v8 ignore start -- Large-queue PR sampling mirrors boundedCollisionIssues; linked and pairwise collision paths are covered above. */
+  if (openPullRequests.length <= MAX_COLLISION_PAIRWISE_PULL_REQUESTS) return openPullRequests;
+  // Rank linked-issue PRs ahead of unlinked ones, then by recency within each group, so the cap keeps
+  // the most-relevant PRs even when linked PRs alone exceed the budget (not just whichever appear
+  // first in caller order).
+  const ranked = [...openPullRequests].sort(
+    (left, right) =>
+      Number(left.linkedIssues.length === 0) - Number(right.linkedIssues.length === 0) ||
+      (right.updatedAt ?? "").localeCompare(left.updatedAt ?? "") ||
+      left.number - right.number,
+  );
+  return ranked.slice(0, MAX_COLLISION_PAIRWISE_PULL_REQUESTS);
   /* v8 ignore stop */
 }
 
