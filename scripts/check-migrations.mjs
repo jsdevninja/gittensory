@@ -36,12 +36,13 @@ const fail = (message) => {
 // migrations to, but the REMOTE D1 authorizer rejects them at `wrangler d1 migrations apply --remote` with
 // `not authorized: SQLITE_AUTH [code: 7500]` — which breaks the deploy AFTER merge, where pre-merge CI can't
 // see it (a `CREATE TEMP TABLE` in 0083 did exactly this). This scan is the only pre-merge gate for that class.
-// `CREATE TEMP` matches anywhere (it always starts a statement); the rest anchor to a statement boundary
-// (start-of-file or after a `;`) so a trigger body's own `BEGIN`/`END` and mid-statement words don't trip.
+// `CREATE TEMP` and `CREATE <object> temp.<name>` match anywhere (they always start a statement);
+// the rest anchor to a statement boundary (start-of-file or after a `;`) so a trigger body's own
+// `BEGIN`/`END` and mid-statement words don't trip.
 // The anchored patterns use a variable-length lookbehind (`(?<=(?:^|;)\s*)`, supported by V8/Node) so the
 // match starts on the keyword itself — reported line numbers point at the statement, not the preceding `;`.
 const D1_FORBIDDEN = [
-  [/create\s+temp(?:orary)?\b/gi, "temporary object (CREATE TEMP/TEMPORARY) — D1 rejects temp tables/triggers/views/indexes; rewrite without one (e.g. DELETE the losers, then UPDATE the survivors)"],
+  [/create\s+(?:temp(?:orary)?\b|(?:unique\s+)?(?:table|index|view|trigger)\s+(?:if\s+not\s+exists\s+)?temp\s*\.)/gi, "temporary object (CREATE TEMP/TEMPORARY or temp schema) — D1 rejects temp tables/triggers/views/indexes; rewrite without one (e.g. DELETE the losers, then UPDATE the survivors)"],
   [/(?<=(?:^|;)\s*)attach\b/gi, "ATTACH is not supported on D1"],
   [/(?<=(?:^|;)\s*)detach\b/gi, "DETACH is not supported on D1"],
   [/(?<=(?:^|;)\s*)vacuum\b/gi, "VACUUM is not supported on D1"],
@@ -49,8 +50,19 @@ const D1_FORBIDDEN = [
   [/(?<=(?:^|;)\s*)(?:begin|commit|rollback|savepoint|release)\b/gi, "explicit transaction control — wrangler wraps each migration in its own transaction"],
 ];
 
-// Blank out comments and string/identifier literals (preserving newlines for accurate line numbers) so a
-// forbidden keyword inside a comment or a quoted value can never trip a false positive.
+// Blank out comments and quoted VALUES (preserving newlines for accurate line numbers) so a forbidden
+// keyword inside a comment or a quoted value can never trip a false positive. A quoted token used as a
+// schema-qualifying IDENTIFIER is different: `"temp".scratch`, `` `temp`.scratch ``, `[temp].scratch`, and
+// even `'temp'.scratch` (SQLite's documented single-quote-as-identifier fallback) are exactly as much a
+// temp-schema object as unquoted `temp.scratch` and must not be hidden from D1_FORBIDDEN below. But the
+// temp-schema pattern is deliberately UNANCHORED (it must match anywhere a statement can start), so
+// preserving a quoted token's content unconditionally — merely because ITS quote style is capable of
+// being an identifier — would leak an ordinary column/table NAME's text into that scan too, e.g. a column
+// literally named "create temp note" is not a temp-schema reference. An identifier is only ever
+// schema-qualifying something when its closing quote is immediately followed (past optional whitespace)
+// by a `.`; an ordinary name or value never is. Peeking past the closing quote for one, uniformly across
+// all four quoting styles, distinguishes "used as a schema qualifier" from "used as a name or value"
+// without a real SQL parser.
 function cleanSql(sql) {
   let out = "";
   for (let i = 0; i < sql.length; ) {
@@ -78,36 +90,29 @@ function cleanSql(sql) {
       }
       continue;
     }
-    if (c === "'" || c === '"' || c === "`") {
-      out += " ";
-      i += 1;
-      while (i < sql.length) {
-        if (sql[i] === c) {
-          if (sql[i + 1] === c) {
-            out += "  ";
-            i += 2;
+    if (c === "'" || c === '"' || c === "`" || c === "[") {
+      const close = c === "[" ? "]" : c;
+      let j = i + 1;
+      let content = "";
+      while (j < sql.length) {
+        if (sql[j] === close) {
+          if (close !== "]" && sql[j + 1] === close) {
+            content += close;
+            j += 2;
             continue;
           }
-          out += " ";
-          i += 1;
           break;
         }
-        out += sql[i] === "\n" ? "\n" : " ";
-        i += 1;
+        content += sql[j];
+        j += 1;
       }
-      continue;
-    }
-    if (c === "[") {
+      let k = j + 1;
+      while (k < sql.length && /\s/.test(sql[k])) k += 1;
+      const usedAsSchemaQualifier = k < sql.length && sql[k] === ".";
       out += " ";
-      i += 1;
-      while (i < sql.length && sql[i] !== "]") {
-        out += sql[i] === "\n" ? "\n" : " ";
-        i += 1;
-      }
-      if (i < sql.length) {
-        out += " ";
-        i += 1;
-      }
+      for (const ch of content) out += usedAsSchemaQualifier ? ch : ch === "\n" ? "\n" : " ";
+      if (j < sql.length) out += " ";
+      i = j < sql.length ? j + 1 : j;
       continue;
     }
     out += c;
