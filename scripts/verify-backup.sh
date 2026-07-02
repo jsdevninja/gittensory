@@ -12,6 +12,168 @@ set -eu
 OUT=${BACKUP_OUT_DIR:-/backups}
 PG_DB="${GITTENSORY_BACKUP_SOURCE_DATABASE_URL:-${DATABASE_URL:-}}"
 TARGET="${1:-}"
+PG_PASSFILES=""
+cleanup() {
+  for pg_pf in $PG_PASSFILES; do
+    rm -f "$pg_pf"
+  done
+}
+trap cleanup EXIT HUP INT TERM
+
+# Percent-decodes a URI userinfo component (RFC 3986). Deliberately does NOT treat '+' as a space -- that
+# convention is specific to application/x-www-form-urlencoded query values, not URI userinfo, where '+' is
+# an ordinary sub-delims character allowed unencoded; the only caller of this function decodes a password
+# extracted from the userinfo section, and a literal '+' there must stay a '+', not become a space.
+url_decode() {
+  printf '%s' "$1" | awk '
+    BEGIN { for (i = 0; i < 256; i++) hex[sprintf("%02X", i)] = sprintf("%c", i); }
+    {
+      out = "";
+      for (i = 1; i <= length($0); i++) {
+        c = substr($0, i, 1);
+        if (c == "%" && i + 2 <= length($0)) {
+          h = toupper(substr($0, i + 1, 2));
+          if (h in hex) { out = out hex[h]; i += 2; } else { out = out c; }
+        } else {
+          out = out c;
+        }
+      }
+      printf "%s", out;
+    }'
+}
+
+pgpass_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/:/\\:/g'
+}
+
+# Strips the password from a postgres(ql):// URI -- from EITHER the userinfo (user:password@host) or a
+# `password=` libpq query-string parameter (postgresql://user@host/db?password=secret is equally valid
+# and equally a leak if left in place) -- and hands back everything else untouched (host, port, dbname,
+# and every other query parameter), instead of re-parsing those pieces ourselves -- the same approach
+# backup.sh uses, see that file for the full rationale. Userinfo detection is restricted to the authority
+# component (before the first '/', '?', or '#'), never the whole remaining string, so a literal '@'/':'
+# inside a query-string value (e.g. ?application_name=a:b@worker) is never mistaken for credentials.
+# Unlike backup.sh, this script may need to connect to TWO different URLs in the same run (the live source
+# and a scratch database), so this takes the URL as an argument and is safe to call repeatedly: it always
+# unsets PGPASSFILE first, so a previous call's password can never leak into a connection for a URL that
+# doesn't have one of its own. Sets $PG_SANITIZED_URL; exports PGPASSFILE (tracked in $PG_PASSFILES for
+# cleanup) if the given URL had a password.
+pg_connect_arg() {
+  # Cleared up front, not just when this URL turns out to have no password: any helper command invoked
+  # below (e.g. url_decode) would otherwise inherit a still-exported PGPASSFILE left over from a PREVIOUS
+  # call for a different URL, for the whole duration of this function's parsing work.
+  unset PGPASSFILE
+  pg_rest=${1#postgres://}
+  pg_rest=${pg_rest#postgresql://}
+
+  pg_authority=${pg_rest%%/*}
+  pg_before_query=${pg_rest%%\?*}
+  pg_before_frag=${pg_rest%%#*}
+  if [ ${#pg_before_query} -lt ${#pg_authority} ]; then pg_authority=$pg_before_query; fi
+  if [ ${#pg_before_frag} -lt ${#pg_authority} ]; then pg_authority=$pg_before_frag; fi
+  pg_suffix=${pg_rest#"$pg_authority"}
+
+  pg_password_value=""
+  pg_sanitized_authority=$pg_authority
+  case "$pg_authority" in
+    *@*)
+      pg_userinfo=${pg_authority%%@*}
+      pg_after_at=${pg_authority#*@}
+      case "$pg_userinfo" in
+        *:*)
+          pg_user_part=${pg_userinfo%%:*}
+          pg_password_value=$(url_decode "${pg_userinfo#*:}")
+          pg_sanitized_authority="${pg_user_part}@${pg_after_at}"
+          ;;
+        *)
+          pg_sanitized_authority="${pg_userinfo}@${pg_after_at}"
+          ;;
+      esac
+      ;;
+  esac
+
+  pg_path=$pg_suffix
+  pg_query=""
+  pg_frag=""
+  case "$pg_suffix" in
+    *\?*)
+      pg_path=${pg_suffix%%\?*}
+      pg_after_q=${pg_suffix#*\?}
+      case "$pg_after_q" in
+        *#*)
+          pg_query=${pg_after_q%%#*}
+          pg_frag="#${pg_after_q#*#}"
+          ;;
+        *)
+          pg_query=$pg_after_q
+          ;;
+      esac
+      ;;
+    *#*)
+      pg_path=${pg_suffix%%#*}
+      pg_frag="#${pg_suffix#*#}"
+      ;;
+  esac
+
+  # libpq percent-decodes query KEY NAMES before matching them against connection keywords, so
+  # `pass%77ord=secret` (%77 = 'w') is just as much a password as a literal `password=secret` -- a literal
+  # string match against "&password=" (an earlier version of this loop) would miss it entirely, leaving a
+  # real credential in $PG_SANITIZED_URL. Walk each '&'-separated pair individually (a trailing '&' is
+  # appended so the last real pair is terminated the same as every other), decode ONLY the key half of
+  # each to compare it against "password", and rebuild the query from every pair whose decoded key isn't
+  # "password" -- in original order, values left percent-encoded exactly as given (they're not being
+  # re-parsed, just passed through to libpq, which decodes them itself). A malformed (but not rejected by
+  # libpq's own parser) URL repeating the key is handled naturally: each match overwrites
+  # pg_password_value, so the LAST occurrence wins -- which one libpq itself would authenticate with is
+  # unspecified for a duplicate key, but every occurrence is a credential either way, so none may reach argv.
+  pg_remaining="$pg_query&"
+  pg_query=""
+  while [ -n "$pg_remaining" ]; do
+    pg_pair=${pg_remaining%%&*}
+    pg_remaining=${pg_remaining#*&}
+    if [ -z "$pg_pair" ]; then continue; fi
+    case "$pg_pair" in
+      *=*) pg_key_raw=${pg_pair%%=*}; pg_val_raw=${pg_pair#*=} ;;
+      *) pg_key_raw=$pg_pair; pg_val_raw="" ;;
+    esac
+    if [ "$(url_decode "$pg_key_raw")" = "password" ]; then
+      pg_password_value=$(url_decode "$pg_val_raw")
+    else
+      if [ -n "$pg_query" ]; then pg_query="$pg_query&$pg_pair"; else pg_query=$pg_pair; fi
+    fi
+  done
+
+  pg_suffix=$pg_path
+  if [ -n "$pg_query" ]; then pg_suffix="$pg_suffix?$pg_query"; fi
+  pg_suffix="$pg_suffix$pg_frag"
+  PG_SANITIZED_URL="postgresql://$pg_sanitized_authority$pg_suffix"
+
+  if [ -n "$pg_password_value" ]; then
+    # pgpass is a single-line-per-entry format; pgpass_escape only handles the two characters (':' and
+    # '\') that format itself treats specially. A decoded password containing a raw newline or carriage
+    # return would still split the entry across lines, corrupting the field layout -- refuse outright
+    # rather than silently write a malformed passfile. "$(printf '\n')" would NOT work as a case pattern
+    # here -- command substitution strips ALL trailing newlines, so it evaluates to an empty string and
+    # the pattern would match everything; build a variable holding exactly one newline/CR by stripping a
+    # trailing marker byte instead.
+    pg_nl=$(printf '\nx'); pg_nl=${pg_nl%x}
+    pg_cr=$(printf '\rx'); pg_cr=${pg_cr%x}
+    case "$pg_password_value" in
+      *"$pg_nl"*|*"$pg_cr"*)
+        echo "[verify] refusing to use a decoded Postgres password containing a newline or carriage return" >&2
+        exit 1
+        ;;
+    esac
+    # Host/port/dbname/user are wildcarded: each passfile is single-purpose, deleted at the end of this
+    # run via the `cleanup` trap, so there's no value in re-deriving the exact host/port/dbname libpq will
+    # resolve -- which the query string can override anyway -- just to match them precisely.
+    pg_passfile=$(mktemp "${TMPDIR:-/tmp}/gittensory-pgpass.XXXXXX")
+    chmod 600 "$pg_passfile"
+    printf '*:*:*:*:%s\n' "$(pgpass_escape "$pg_password_value")" > "$pg_passfile"
+    PG_PASSFILES="$PG_PASSFILES $pg_passfile"
+    export PGPASSFILE="$pg_passfile"
+  fi
+}
 
 verify_postgres() {
   dump="$1"
@@ -64,19 +226,27 @@ verify_postgres() {
   # the same cluster as distinct (a legitimate, common scratch-DB setup). No special privilege is required:
   # PUBLIC has EXECUTE on pg_control_system() by default. Any failure to fingerprint EITHER side aborts (fail
   # closed) rather than assuming the databases differ.
+  # Takes an ALREADY-sanitized URL, not the raw one -- pg_connect_arg must be called by the caller in the
+  # PARENT shell before invoking this via command substitution ($(db_identity ...)), never from inside
+  # this function's own body. Command substitution always forks a subshell, and pg_connect_arg's
+  # PG_PASSFILES-tracking side effect would be silently lost when that subshell exits (subshells get a
+  # copy of the parent's variables; changes never propagate back out), orphaning a real,
+  # credential-bearing 600-permission temp file on disk with no owner left to clean it up.
   db_identity() {
     psql "$1" -X -q -t -A -v ON_ERROR_STOP=1 \
       -c "SELECT current_database() || '@' || (SELECT system_identifier FROM pg_control_system())::text" \
       2>/dev/null
   }
-  scratch_identity="$(db_identity "$scratch")" || scratch_identity=""
+  pg_connect_arg "$scratch"
+  scratch_identity="$(db_identity "$PG_SANITIZED_URL")" || scratch_identity=""
   if [ -z "$scratch_identity" ]; then
     echo "[verify] could not connect to the scratch database to verify its identity; refusing to proceed" >&2
     return 1
   fi
   case "$PG_DB" in
     postgres://* | postgresql://*)
-      live_identity="$(db_identity "$PG_DB")" || live_identity=""
+      pg_connect_arg "$PG_DB"
+      live_identity="$(db_identity "$PG_SANITIZED_URL")" || live_identity=""
       if [ -z "$live_identity" ]; then
         echo "[verify] could not connect to the live backup source to verify its identity; refusing to proceed" >&2
         return 1
@@ -88,11 +258,13 @@ verify_postgres() {
       ;;
   esac
   echo "[verify] restoring $dump into the scratch database…"
-  if ! pg_restore --clean --if-exists --no-owner --no-privileges --dbname "$scratch" "$dump" >/dev/null 2>&1; then
+  pg_connect_arg "$scratch"
+  if ! pg_restore --clean --if-exists --no-owner --no-privileges --dbname "$PG_SANITIZED_URL" "$dump" >/dev/null 2>&1; then
     echo "[verify] scratch restore failed for $dump" >&2
     return 1
   fi
-  tables="$(psql "$scratch" -X -q -t -A -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'")" || {
+  pg_connect_arg "$scratch"
+  tables="$(psql "$PG_SANITIZED_URL" -X -q -t -A -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'")" || {
     echo "[verify] scratch sanity query failed" >&2
     return 1
   }
