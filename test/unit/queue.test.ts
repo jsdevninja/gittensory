@@ -5669,6 +5669,461 @@ describe("queue processors", () => {
     expect(seen.comments.some((c) => c.includes("blocked from contributing"))).toBe(true);
   });
 
+  describe("live migrations/** collision recheck (#2550)", () => {
+    // Full merge-eligible stub set (clean + green + approved), reused across scenarios — a positive test proves
+    // the collision hold actually suppresses what would otherwise merge; a negative test proves the check
+    // correctly stays out of the way. `liveTree` is the live git/trees response for `main` (the collision
+    // source of truth); `seen.treeCalls` counts how many times it was fetched, so the "no latency for a
+    // non-migrations PR" and "off by default" requirements are directly assertable, not just inferred.
+    function stubMigrationRecheckFetch(prNumber: number, changedFile: { filename: string; status: string } | Array<{ filename: string; status: string }>, liveTree: Array<{ type: string; path: string }> | "error", seen: { closed: boolean; merged: boolean; labels: string[]; comments: string[]; treeCalls: number }) {
+      const changedFiles = Array.isArray(changedFile) ? changedFile : [changedFile];
+      vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input.toString();
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (url === "https://api.gittensor.io/miners") return Response.json([]);
+        if (url.includes("/access_tokens")) return Response.json({ token: "installation-token" });
+        if (url.includes("/check-runs/") && method === "PATCH") return Response.json({ id: 901 });
+        if (url.includes(`/git/trees/main`)) {
+          seen.treeCalls += 1;
+          if (liveTree === "error") return new Response("not found", { status: 404 });
+          return Response.json({ tree: liveTree });
+        }
+        if (/\/pulls\/\d+(?:\?|$)/.test(url) && method === "GET" && !url.includes(`/pulls/${prNumber}/`)) {
+          return Response.json({ number: prNumber, state: "open", user: { login: "contributor" }, head: { sha: "sha1" }, base: { ref: "main", sha: "base" }, mergeable_state: "clean", labels: [] });
+        }
+        if (url.includes(`/pulls/${prNumber}/files`)) return Response.json(changedFiles.map((f) => ({ ...f, additions: 5, deletions: 0, changes: 5, patch: "@@\n+ALTER TABLE t ADD COLUMN c TEXT;" })));
+        if (url.includes(`/commits/sha1/check-runs`)) return Response.json({ total_count: 0, check_runs: [] });
+        if (url.includes(`/commits/sha1/status`)) return Response.json({ state: "success", statuses: [{ context: "ci/build", state: "success", description: "ok" }] });
+        if (url.includes(`/commits/sha1/check-suites`)) return Response.json({ check_suites: [] });
+        if (url.includes("/branches/")) return Response.json({ contexts: [] });
+        if (url === "https://api.github.com/graphql") return Response.json({ data: { repository: { pullRequest: { reviewDecision: "APPROVED" } } } });
+        if (url.includes(`/pulls/${prNumber}/merge`) && method === "PUT") {
+          seen.merged = true;
+          return Response.json({ merged: true, sha: "merged-sha1" });
+        }
+        if (url.includes(`/pulls/${prNumber}`) && method === "PATCH") {
+          seen.closed = JSON.parse(String(init?.body ?? "{}")).state === "closed";
+          return Response.json({ number: prNumber, state: "closed" });
+        }
+        if (url.includes(`/issues/${prNumber}/labels`) && method === "GET") return Response.json([]);
+        if (url.includes(`/issues/${prNumber}/labels`) && method === "POST") {
+          seen.labels.push(...((JSON.parse(String(init?.body ?? "{}")).labels ?? []) as string[]));
+          return Response.json([]);
+        }
+        if (url.endsWith("/labels") && method === "POST") return Response.json({ name: "x" }, { status: 201 }); // repo-level label creation (createMissingLabel probe)
+        if (url.includes(`/issues/${prNumber}/comments`) && method === "POST") {
+          seen.comments.push(String(JSON.parse(String(init?.body ?? "{}")).body ?? ""));
+          return Response.json({ id: 1 }, { status: 201 });
+        }
+        if (url.includes(`/issues/${prNumber}/comments`)) return Response.json([]);
+        if (url.includes("/check-runs") && method === "POST") return Response.json({ id: 901 }, { status: 201 });
+        return Response.json({});
+      });
+    }
+
+    async function seedMigrationRecheckRepo(env: Env, prNumber: number, opts: { premergeContentRecheck?: boolean } = {}) {
+      await upsertInstallation(env, {
+        installation: { id: 123, account: { login: "owner", id: 1, type: "Organization" }, target_type: "Organization", repository_selection: "selected", permissions: { pull_requests: "write", issues: "write" }, events: [] },
+      });
+      await upsertRepositoryFromGitHub(env, { name: "repo", full_name: "owner/repo", private: false, owner: { login: "owner" } }, 123);
+      await upsertRepositorySettings(env, { repoFullName: "owner/repo", autonomy: { merge: "auto", label: "auto" }, aiReviewMode: "off", gatePack: "oss-anti-slop", gateCheckMode: "enabled", checkRunMode: "off", commentMode: "off", publicSurface: "off" });
+      if (opts.premergeContentRecheck !== undefined) {
+        await upsertRepoFocusManifest(env, "owner/repo", { gate: { premergeContentRecheck: opts.premergeContentRecheck } });
+      }
+      await upsertPullRequestFromGitHub(env, "owner/repo", { number: prNumber, title: "Migration PR", state: "open", user: { login: "contributor" }, head: { sha: "sha1" }, base: { ref: "main" }, labels: [], body: "" });
+    }
+
+    it("holds a would-otherwise-merge PR when the live base has a colliding migration number, with the distinct label + rebase comment", async () => {
+      const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: await generatePrivateKeyPem() });
+      await seedMigrationRecheckRepo(env, 60, { premergeContentRecheck: true });
+      const seen = { closed: false, merged: false, labels: [] as string[], comments: [] as string[], treeCalls: 0 };
+      stubMigrationRecheckFetch(60, { filename: "migrations/0099_a.sql", status: "added" }, [{ type: "blob", path: "migrations/0099_b.sql" }], seen);
+
+      await processJob(env, { type: "agent-regate-pr", deliveryId: "migration-collision-hold", repoFullName: "owner/repo", prNumber: 60, installationId: 123 });
+
+      expect(seen.merged).toBe(false);
+      expect(seen.closed).toBe(false); // held, never closed — this is a hold, not a close
+      expect(seen.labels).toContain("gittensory:migration-collision");
+      expect(seen.comments.some((c) => c.includes("rebase") && c.includes("0099"))).toBe(true);
+      expect(seen.treeCalls).toBe(1);
+    });
+
+    it("does not hold when the base has no colliding number — merges normally", async () => {
+      const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: await generatePrivateKeyPem() });
+      await seedMigrationRecheckRepo(env, 61, { premergeContentRecheck: true });
+      const seen = { closed: false, merged: false, labels: [] as string[], comments: [] as string[], treeCalls: 0 };
+      stubMigrationRecheckFetch(61, { filename: "migrations/0099_a.sql", status: "added" }, [{ type: "blob", path: "migrations/0050_unrelated.sql" }], seen);
+
+      await processJob(env, { type: "agent-regate-pr", deliveryId: "migration-no-collision", repoFullName: "owner/repo", prNumber: 61, installationId: 123 });
+
+      expect(seen.merged).toBe(true);
+      expect(seen.labels).not.toContain("gittensory:migration-collision");
+      expect(seen.treeCalls).toBe(1);
+    });
+
+    it("pays zero latency (never fetches the live tree) for a PR that does not touch migrations/**, even with the recheck enabled", async () => {
+      const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: await generatePrivateKeyPem() });
+      await seedMigrationRecheckRepo(env, 62, { premergeContentRecheck: true });
+      const seen = { closed: false, merged: false, labels: [] as string[], comments: [] as string[], treeCalls: 0 };
+      stubMigrationRecheckFetch(62, { filename: "src/index.ts", status: "modified" }, [{ type: "blob", path: "migrations/0099_b.sql" }], seen);
+
+      await processJob(env, { type: "agent-regate-pr", deliveryId: "migration-not-touched", repoFullName: "owner/repo", prNumber: 62, installationId: 123 });
+
+      expect(seen.treeCalls).toBe(0); // path-gated — never even attempted the live fetch
+      expect(seen.merged).toBe(true);
+    });
+
+    it("is off by default — never fetches the live tree even for a migrations/**-touching PR when unconfigured", async () => {
+      const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: await generatePrivateKeyPem() });
+      await seedMigrationRecheckRepo(env, 63); // premergeContentRecheck left unset — defaults off
+      const seen = { closed: false, merged: false, labels: [] as string[], comments: [] as string[], treeCalls: 0 };
+      stubMigrationRecheckFetch(63, { filename: "migrations/0099_a.sql", status: "added" }, [{ type: "blob", path: "migrations/0099_b.sql" }], seen);
+
+      await processJob(env, { type: "agent-regate-pr", deliveryId: "migration-recheck-off", repoFullName: "owner/repo", prNumber: 63, installationId: 123 });
+
+      expect(seen.treeCalls).toBe(0);
+      expect(seen.merged).toBe(true); // a live collision exists but the feature is off — merges anyway (opt-in)
+    });
+
+    it("fails OPEN (merges normally) when the live tree fetch errors — never holds a PR on inconclusive data", async () => {
+      const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: await generatePrivateKeyPem() });
+      await seedMigrationRecheckRepo(env, 64, { premergeContentRecheck: true });
+      const seen = { closed: false, merged: false, labels: [] as string[], comments: [] as string[], treeCalls: 0 };
+      stubMigrationRecheckFetch(64, { filename: "migrations/0099_a.sql", status: "added" }, "error", seen);
+
+      await processJob(env, { type: "agent-regate-pr", deliveryId: "migration-fetch-error", repoFullName: "owner/repo", prNumber: 64, installationId: 123 });
+
+      expect(seen.treeCalls).toBe(1);
+      expect(seen.merged).toBe(true);
+      expect(seen.labels).not.toContain("gittensory:migration-collision");
+    });
+
+    it("fails OPEN (never fetches the live tree) when the PR has no resolvable base ref", async () => {
+      const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: await generatePrivateKeyPem() });
+      await upsertInstallation(env, {
+        installation: { id: 123, account: { login: "owner", id: 1, type: "Organization" }, target_type: "Organization", repository_selection: "selected", permissions: { pull_requests: "write", issues: "write" }, events: [] },
+      });
+      // No default_branch on the repo record AND no base.ref on the PR record — baseRef resolves to undefined.
+      await upsertRepositoryFromGitHub(env, { name: "repo", full_name: "owner/repo", private: false, owner: { login: "owner" } }, 123);
+      await upsertRepositorySettings(env, { repoFullName: "owner/repo", autonomy: { merge: "auto", label: "auto" }, aiReviewMode: "off", gatePack: "oss-anti-slop", gateCheckMode: "enabled", checkRunMode: "off", commentMode: "off", publicSurface: "off" });
+      await upsertRepoFocusManifest(env, "owner/repo", { gate: { premergeContentRecheck: true } });
+      await upsertPullRequestFromGitHub(env, "owner/repo", { number: 65, title: "No base ref", state: "open", user: { login: "contributor" }, head: { sha: "sha1" }, labels: [], body: "" });
+      const seen = { closed: false, merged: false, labels: [] as string[], comments: [] as string[], treeCalls: 0 };
+      stubMigrationRecheckFetch(65, { filename: "migrations/0099_a.sql", status: "added" }, [{ type: "blob", path: "migrations/0099_b.sql" }], seen);
+
+      await processJob(env, { type: "agent-regate-pr", deliveryId: "migration-no-base-ref", repoFullName: "owner/repo", prNumber: 65, installationId: 123 });
+
+      expect(seen.treeCalls).toBe(0); // no live target to compare against — never even attempted the fetch
+      expect(seen.merged).toBe(true);
+      expect(seen.labels).not.toContain("gittensory:migration-collision");
+    });
+
+    it("REGRESSION: is deliberately UNCACHED — a live tree that changes between two consecutive maintenance passes is picked up fresh, never served stale", async () => {
+      // The exact race a caching layer would reintroduce: a sibling PR (not modeled directly here — simulated
+      // by the live tree response CHANGING between the two fetches, the same effect a sibling merge has) adds
+      // a colliding migration file in the window between two maintenance passes on the SAME PR. A cache keyed
+      // by repo+baseRef would serve the first (pre-collision) snapshot on the second pass and miss the
+      // collision entirely — this asserts both passes fetch fresh and the second one correctly detects it.
+      const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: await generatePrivateKeyPem() });
+      await seedMigrationRecheckRepo(env, 66, { premergeContentRecheck: true });
+      const seen = { closed: false, merged: false, labels: [] as string[], comments: [] as string[], treeCalls: 0 };
+      let liveTree: Array<{ type: string; path: string }> = []; // pass 1: main has nothing colliding yet
+      vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input.toString();
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (url === "https://api.gittensor.io/miners") return Response.json([]);
+        if (url.includes("/access_tokens")) return Response.json({ token: "installation-token" });
+        if (url.includes("/check-runs/") && method === "PATCH") return Response.json({ id: 901 });
+        if (url.includes("/git/trees/main")) {
+          seen.treeCalls += 1;
+          return Response.json({ tree: liveTree });
+        }
+        if (/\/pulls\/\d+(?:\?|$)/.test(url) && method === "GET" && !url.includes("/pulls/66/")) {
+          return Response.json({ number: 66, state: "open", user: { login: "contributor" }, head: { sha: "sha1" }, base: { ref: "main", sha: "base" }, mergeable_state: "clean", labels: [] });
+        }
+        if (url.includes("/pulls/66/files")) return Response.json([{ filename: "migrations/0099_a.sql", status: "added", additions: 5, deletions: 0, changes: 5, patch: "@@\n+ALTER TABLE t ADD COLUMN c TEXT;" }]);
+        if (url.includes("/commits/sha1/check-runs")) return Response.json({ total_count: 0, check_runs: [] });
+        if (url.includes("/commits/sha1/status")) return Response.json({ state: "success", statuses: [{ context: "ci/build", state: "success", description: "ok" }] });
+        if (url.includes("/commits/sha1/check-suites")) return Response.json({ check_suites: [] });
+        if (url.includes("/branches/")) return Response.json({ contexts: [] });
+        if (url === "https://api.github.com/graphql") return Response.json({ data: { repository: { pullRequest: { reviewDecision: "APPROVED" } } } });
+        if (url.includes("/pulls/66/merge") && method === "PUT") {
+          seen.merged = true;
+          return Response.json({ merged: true, sha: "merged-sha1" });
+        }
+        if (url.includes("/issues/66/labels") && method === "GET") return Response.json([]);
+        if (url.includes("/issues/66/labels") && method === "POST") {
+          seen.labels.push(...((JSON.parse(String(init?.body ?? "{}")).labels ?? []) as string[]));
+          return Response.json([]);
+        }
+        if (url.endsWith("/labels") && method === "POST") return Response.json({ name: "x" }, { status: 201 });
+        if (url.includes("/issues/66/comments")) return Response.json([]);
+        return Response.json({});
+      });
+
+      await processJob(env, { type: "agent-regate-pr", deliveryId: "migration-fresh-pass-1", repoFullName: "owner/repo", prNumber: 66, installationId: 123 });
+      expect(seen.merged).toBe(true); // pass 1: no collision yet — merges
+
+      // Between passes, a sibling PR merges its own colliding 0099 file — main's live tree now has it.
+      liveTree = [{ type: "blob", path: "migrations/0099_b.sql" }];
+      seen.merged = false;
+      await processJob(env, { type: "agent-regate-pr", deliveryId: "migration-fresh-pass-2", repoFullName: "owner/repo", prNumber: 66, installationId: 123 });
+
+      expect(seen.treeCalls).toBe(2); // every pass fetches fresh — no cache could ever mask the change
+      expect(seen.labels).toContain("gittensory:migration-collision");
+      expect(seen.merged).toBe(false); // pass 2 correctly catches the now-live collision, never stale-served
+    });
+
+    it("does NOT hold for a pre-existing collision between two OTHER files unrelated to this PR's own migration number", async () => {
+      const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: await generatePrivateKeyPem() });
+      await seedMigrationRecheckRepo(env, 67, { premergeContentRecheck: true });
+      const seen = { closed: false, merged: false, labels: [] as string[], comments: [] as string[], treeCalls: 0 };
+      // main already has a real collision at 0050 (two unrelated, already-merged files) — nothing to do with
+      // this PR's own migration at 0099. The prNumbers scoping must exclude it: main is already broken by
+      // someone else's mistake, but that must not hold an unrelated third PR.
+      stubMigrationRecheckFetch(67, { filename: "migrations/0099_a.sql", status: "added" }, [
+        { type: "blob", path: "migrations/0050_x.sql" },
+        { type: "blob", path: "migrations/0050_y.sql" },
+      ], seen);
+
+      await processJob(env, { type: "agent-regate-pr", deliveryId: "migration-unrelated-collision", repoFullName: "owner/repo", prNumber: 67, installationId: 123 });
+
+      expect(seen.merged).toBe(true);
+      expect(seen.labels).not.toContain("gittensory:migration-collision");
+    });
+
+    it("holds and reports every colliding number when a PR touches two migration files that each independently collide", async () => {
+      const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: await generatePrivateKeyPem() });
+      await seedMigrationRecheckRepo(env, 68, { premergeContentRecheck: true });
+      const seen = { closed: false, merged: false, labels: [] as string[], comments: [] as string[], treeCalls: 0 };
+      stubMigrationRecheckFetch(
+        68,
+        [
+          { filename: "migrations/0098_a.sql", status: "added" },
+          { filename: "migrations/0099_a.sql", status: "added" },
+        ],
+        [
+          { type: "blob", path: "migrations/0098_b.sql" },
+          { type: "blob", path: "migrations/0099_b.sql" },
+        ],
+        seen,
+      );
+
+      await processJob(env, { type: "agent-regate-pr", deliveryId: "migration-multi-collision", repoFullName: "owner/repo", prNumber: 68, installationId: 123 });
+
+      expect(seen.merged).toBe(false);
+      expect(seen.labels).toContain("gittensory:migration-collision");
+      expect(seen.comments.some((c) => c.includes("0098") && c.includes("0099"))).toBe(true);
+    });
+
+    it("does not hold when the live base already contains one of the real grandfathered duplicate pairs, unrelated to this PR's own migration number", async () => {
+      const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: await generatePrivateKeyPem() });
+      await seedMigrationRecheckRepo(env, 69, { premergeContentRecheck: true });
+      const seen = { closed: false, merged: false, labels: [] as string[], comments: [] as string[], treeCalls: 0 };
+      // The real, already-shipped 0090 grandfathered pair (see KNOWN_MIGRATION_DUPLICATES) is present on main —
+      // this must never trigger a hold for an unrelated PR touching a different number.
+      stubMigrationRecheckFetch(69, { filename: "migrations/0099_a.sql", status: "added" }, [
+        { type: "blob", path: "migrations/0090_contributor_cap_label.sql" },
+        { type: "blob", path: "migrations/0090_pull_request_detail_sync_head_sha.sql" },
+      ], seen);
+
+      await processJob(env, { type: "agent-regate-pr", deliveryId: "migration-grandfathered", repoFullName: "owner/repo", prNumber: 69, installationId: 123 });
+
+      expect(seen.merged).toBe(true);
+      expect(seen.labels).not.toContain("gittensory:migration-collision");
+    });
+
+    it("REGRESSION: renaming this PR's own not-yet-merged migration file (e.g. a typo fix, same number) does NOT self-collide", async () => {
+      // Before the fix, prMigrationFilenames was derived from changedPathsForGuardrail's collapsed set, which
+      // includes BOTH a renamed file's old and new name — counting one logical file as two and self-colliding.
+      const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: await generatePrivateKeyPem() });
+      await seedMigrationRecheckRepo(env, 70, { premergeContentRecheck: true });
+      const seen = { closed: false, merged: false, labels: [] as string[], comments: [] as string[], treeCalls: 0 };
+      vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input.toString();
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (url === "https://api.gittensor.io/miners") return Response.json([]);
+        if (url.includes("/access_tokens")) return Response.json({ token: "installation-token" });
+        if (url.includes("/check-runs/") && method === "PATCH") return Response.json({ id: 901 });
+        if (url.includes("/git/trees/main")) {
+          seen.treeCalls += 1;
+          return Response.json({ tree: [] }); // empty live base — nothing else to collide with
+        }
+        if (/\/pulls\/\d+(?:\?|$)/.test(url) && method === "GET" && !url.includes("/pulls/70/")) {
+          return Response.json({ number: 70, state: "open", user: { login: "contributor" }, head: { sha: "sha1" }, base: { ref: "main", sha: "base" }, mergeable_state: "clean", labels: [] });
+        }
+        // A single GitHub PR-files entry for a rename: status="renamed", filename=new name, previous_filename=old name.
+        if (url.includes("/pulls/70/files")) return Response.json([{ filename: "migrations/0099_add_column.sql", previous_filename: "migrations/0099_add_colum.sql", status: "renamed", additions: 1, deletions: 1, changes: 2, patch: "@@\n rename" }]);
+        if (url.includes("/commits/sha1/check-runs")) return Response.json({ total_count: 0, check_runs: [] });
+        if (url.includes("/commits/sha1/status")) return Response.json({ state: "success", statuses: [{ context: "ci/build", state: "success", description: "ok" }] });
+        if (url.includes("/commits/sha1/check-suites")) return Response.json({ check_suites: [] });
+        if (url.includes("/branches/")) return Response.json({ contexts: [] });
+        if (url === "https://api.github.com/graphql") return Response.json({ data: { repository: { pullRequest: { reviewDecision: "APPROVED" } } } });
+        if (url.includes("/pulls/70/merge") && method === "PUT") {
+          seen.merged = true;
+          return Response.json({ merged: true, sha: "merged-sha1" });
+        }
+        if (url.includes("/issues/70/labels") && method === "GET") return Response.json([]);
+        if (url.includes("/issues/70/labels") && method === "POST") {
+          seen.labels.push(...((JSON.parse(String(init?.body ?? "{}")).labels ?? []) as string[]));
+          return Response.json([]);
+        }
+        if (url.endsWith("/labels") && method === "POST") return Response.json({ name: "x" }, { status: 201 });
+        if (url.includes("/issues/70/comments")) return Response.json([]);
+        return Response.json({});
+      });
+
+      await processJob(env, { type: "agent-regate-pr", deliveryId: "migration-rename-self", repoFullName: "owner/repo", prNumber: 70, installationId: 123 });
+
+      expect(seen.merged).toBe(true); // no false self-collision from counting the old+new rename names as two files
+      expect(seen.labels).not.toContain("gittensory:migration-collision");
+    });
+
+    it("REGRESSION: renaming an EXISTING base migration (same number) does NOT self-collide with its own old name still live on main", async () => {
+      // Before the fix, liveFilenames (fetched from main, which still has the pre-rename name until this PR
+      // merges) was unioned as-is with prMigrationFilenames (the new name only) — so a same-number typo-fix
+      // rename of an ALREADY-MERGED base migration counted as two distinct files at one number and
+      // self-collided, even though the merged tree would only ever contain the renamed file.
+      const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: await generatePrivateKeyPem() });
+      await seedMigrationRecheckRepo(env, 73, { premergeContentRecheck: true });
+      const seen = { closed: false, merged: false, labels: [] as string[], comments: [] as string[], treeCalls: 0 };
+      vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input.toString();
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (url === "https://api.gittensor.io/miners") return Response.json([]);
+        if (url.includes("/access_tokens")) return Response.json({ token: "installation-token" });
+        if (url.includes("/check-runs/") && method === "PATCH") return Response.json({ id: 901 });
+        if (url.includes("/git/trees/main")) {
+          seen.treeCalls += 1;
+          // main still has the PRE-rename name — this PR's rename hasn't merged yet.
+          return Response.json({ tree: [{ type: "blob", path: "migrations/0099_old.sql" }] });
+        }
+        if (/\/pulls\/\d+(?:\?|$)/.test(url) && method === "GET" && !url.includes("/pulls/73/")) {
+          return Response.json({ number: 73, state: "open", user: { login: "contributor" }, head: { sha: "sha1" }, base: { ref: "main", sha: "base" }, mergeable_state: "clean", labels: [] });
+        }
+        // Renames an EXISTING base migration (same number 0099), not a file this PR itself added.
+        if (url.includes("/pulls/73/files")) return Response.json([{ filename: "migrations/0099_new.sql", previous_filename: "migrations/0099_old.sql", status: "renamed", additions: 1, deletions: 1, changes: 2, patch: "@@\n rename" }]);
+        if (url.includes("/commits/sha1/check-runs")) return Response.json({ total_count: 0, check_runs: [] });
+        if (url.includes("/commits/sha1/status")) return Response.json({ state: "success", statuses: [{ context: "ci/build", state: "success", description: "ok" }] });
+        if (url.includes("/commits/sha1/check-suites")) return Response.json({ check_suites: [] });
+        if (url.includes("/branches/")) return Response.json({ contexts: [] });
+        if (url === "https://api.github.com/graphql") return Response.json({ data: { repository: { pullRequest: { reviewDecision: "APPROVED" } } } });
+        if (url.includes("/pulls/73/merge") && method === "PUT") {
+          seen.merged = true;
+          return Response.json({ merged: true, sha: "merged-sha1" });
+        }
+        if (url.includes("/issues/73/labels") && method === "GET") return Response.json([]);
+        if (url.includes("/issues/73/labels") && method === "POST") {
+          seen.labels.push(...((JSON.parse(String(init?.body ?? "{}")).labels ?? []) as string[]));
+          return Response.json([]);
+        }
+        if (url.endsWith("/labels") && method === "POST") return Response.json({ name: "x" }, { status: 201 });
+        if (url.includes("/issues/73/comments")) return Response.json([]);
+        return Response.json({});
+      });
+
+      await processJob(env, { type: "agent-regate-pr", deliveryId: "migration-rename-existing-base", repoFullName: "owner/repo", prNumber: 73, installationId: 123 });
+
+      expect(seen.merged).toBe(true); // the pre-rename name still live on main must not count against this PR
+      expect(seen.labels).not.toContain("gittensory:migration-collision");
+    });
+
+    it("REGRESSION: renumbering (renaming) this PR's migration to resolve a real collision does not leave a stale hold from the old filename", async () => {
+      // Before the fix, the stale previousFilename (the OLD number) stayed in prMigrationFilenames forever,
+      // colliding with an unrelated already-merged file at that old number and permanently re-holding a PR
+      // that had already fixed itself — exactly the remediation this feature's own comment recommends.
+      const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: await generatePrivateKeyPem() });
+      await seedMigrationRecheckRepo(env, 71, { premergeContentRecheck: true });
+      const seen = { closed: false, merged: false, labels: [] as string[], comments: [] as string[], treeCalls: 0 };
+      vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input.toString();
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (url === "https://api.gittensor.io/miners") return Response.json([]);
+        if (url.includes("/access_tokens")) return Response.json({ token: "installation-token" });
+        if (url.includes("/check-runs/") && method === "PATCH") return Response.json({ id: 901 });
+        if (url.includes("/git/trees/main")) {
+          seen.treeCalls += 1;
+          // main already has an unrelated, already-merged file at the OLD number (0099) — nothing to do with
+          // this PR anymore, since it renumbered away from 0099 to 0100.
+          return Response.json({ tree: [{ type: "blob", path: "migrations/0099_other_already_merged.sql" }] });
+        }
+        if (/\/pulls\/\d+(?:\?|$)/.test(url) && method === "GET" && !url.includes("/pulls/71/")) {
+          return Response.json({ number: 71, state: "open", user: { login: "contributor" }, head: { sha: "sha1" }, base: { ref: "main", sha: "base" }, mergeable_state: "clean", labels: [] });
+        }
+        if (url.includes("/pulls/71/files")) return Response.json([{ filename: "migrations/0100_mine.sql", previous_filename: "migrations/0099_mine.sql", status: "renamed", additions: 1, deletions: 1, changes: 2, patch: "@@\n rename" }]);
+        if (url.includes("/commits/sha1/check-runs")) return Response.json({ total_count: 0, check_runs: [] });
+        if (url.includes("/commits/sha1/status")) return Response.json({ state: "success", statuses: [{ context: "ci/build", state: "success", description: "ok" }] });
+        if (url.includes("/commits/sha1/check-suites")) return Response.json({ check_suites: [] });
+        if (url.includes("/branches/")) return Response.json({ contexts: [] });
+        if (url === "https://api.github.com/graphql") return Response.json({ data: { repository: { pullRequest: { reviewDecision: "APPROVED" } } } });
+        if (url.includes("/pulls/71/merge") && method === "PUT") {
+          seen.merged = true;
+          return Response.json({ merged: true, sha: "merged-sha1" });
+        }
+        if (url.includes("/issues/71/labels") && method === "GET") return Response.json([]);
+        if (url.includes("/issues/71/labels") && method === "POST") {
+          seen.labels.push(...((JSON.parse(String(init?.body ?? "{}")).labels ?? []) as string[]));
+          return Response.json([]);
+        }
+        if (url.endsWith("/labels") && method === "POST") return Response.json({ name: "x" }, { status: 201 });
+        if (url.includes("/issues/71/comments")) return Response.json([]);
+        return Response.json({});
+      });
+
+      await processJob(env, { type: "agent-regate-pr", deliveryId: "migration-renumber-remediation", repoFullName: "owner/repo", prNumber: 71, installationId: 123 });
+
+      expect(seen.merged).toBe(true); // the stale old-number previousFilename must not re-trigger a hold
+      expect(seen.labels).not.toContain("gittensory:migration-collision");
+    });
+
+    it("REGRESSION: deleting this PR's own colliding migration file does not still count it as one of the PR's own filenames", async () => {
+      const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: await generatePrivateKeyPem() });
+      await seedMigrationRecheckRepo(env, 72, { premergeContentRecheck: true });
+      const seen = { closed: false, merged: false, labels: [] as string[], comments: [] as string[], treeCalls: 0 };
+      vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input.toString();
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (url === "https://api.gittensor.io/miners") return Response.json([]);
+        if (url.includes("/access_tokens")) return Response.json({ token: "installation-token" });
+        if (url.includes("/check-runs/") && method === "PATCH") return Response.json({ id: 901 });
+        if (url.includes("/git/trees/main")) {
+          seen.treeCalls += 1;
+          return Response.json({ tree: [{ type: "blob", path: "migrations/0099_other_already_merged.sql" }] });
+        }
+        if (/\/pulls\/\d+(?:\?|$)/.test(url) && method === "GET" && !url.includes("/pulls/72/")) {
+          return Response.json({ number: 72, state: "open", user: { login: "contributor" }, head: { sha: "sha1" }, base: { ref: "main", sha: "base" }, mergeable_state: "clean", labels: [] });
+        }
+        // The PR deletes its own migration file (status="removed") — it no longer exists in the PR's tree.
+        if (url.includes("/pulls/72/files")) return Response.json([{ filename: "migrations/0099_mine.sql", status: "removed", additions: 0, deletions: 5, changes: 5, patch: "@@\n-removed" }]);
+        if (url.includes("/commits/sha1/check-runs")) return Response.json({ total_count: 0, check_runs: [] });
+        if (url.includes("/commits/sha1/status")) return Response.json({ state: "success", statuses: [{ context: "ci/build", state: "success", description: "ok" }] });
+        if (url.includes("/commits/sha1/check-suites")) return Response.json({ check_suites: [] });
+        if (url.includes("/branches/")) return Response.json({ contexts: [] });
+        if (url === "https://api.github.com/graphql") return Response.json({ data: { repository: { pullRequest: { reviewDecision: "APPROVED" } } } });
+        if (url.includes("/pulls/72/merge") && method === "PUT") {
+          seen.merged = true;
+          return Response.json({ merged: true, sha: "merged-sha1" });
+        }
+        if (url.includes("/issues/72/labels") && method === "GET") return Response.json([]);
+        if (url.includes("/issues/72/labels") && method === "POST") {
+          seen.labels.push(...((JSON.parse(String(init?.body ?? "{}")).labels ?? []) as string[]));
+          return Response.json([]);
+        }
+        if (url.endsWith("/labels") && method === "POST") return Response.json({ name: "x" }, { status: 201 });
+        if (url.includes("/issues/72/comments")) return Response.json([]);
+        return Response.json({});
+      });
+
+      await processJob(env, { type: "agent-regate-pr", deliveryId: "migration-removed-file", repoFullName: "owner/repo", prNumber: 72, installationId: 123 });
+
+      // With no migrations/**-touching file left in the PR's own set (the only entry is `status: "removed"`),
+      // prMigrationFilenames is empty — the whole recheck is path-gated off, so it never even fetches the tree.
+      expect(seen.treeCalls).toBe(0);
+      expect(seen.merged).toBe(true);
+      expect(seen.labels).not.toContain("gittensory:migration-collision");
+    });
+  });
+
   it("contributor open-PR cap (#2270): a contributor's 3rd open PR (over a cap of 2) is labeled + closed deterministically with no merit merge", async () => {
     let aiCalls = 0;
     const env = createTestEnv({
