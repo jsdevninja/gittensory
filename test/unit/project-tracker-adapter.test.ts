@@ -294,6 +294,20 @@ describe("GitHubProjectsAdapter (#3184)", () => {
     expect(mutationVariables).toEqual({ projectId: "PVT_1", contentId: "PR_kwABC" });
   });
 
+  it("attachToProject rejects a blank projectId without calling GitHub", async () => {
+    let called = false;
+    vi.stubGlobal("fetch", async () => {
+      called = true;
+      return new Response("unexpected", { status: 500 });
+    });
+    const adapter = new GitHubProjectsAdapter();
+    const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: generateRsaPrivateKeyPem() });
+    for (const projectId of ["", "   "]) {
+      await expect(adapter.attachToProject({ env, installationId: 123, repoFullName: "some-org/gittensory" }, 4, projectId)).resolves.toEqual({ attached: false });
+    }
+    expect(called).toBe(false);
+  });
+
   it("attachToProject reports not-attached when GitHub returns no item (e.g. a permission/visibility gap)", async () => {
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input.toString();
@@ -350,6 +364,19 @@ describe("resolveProjectV2Fields (#3184)", () => {
       { id: "F_1", name: "Title" },
       { id: "F_2", name: "Status", options: [{ id: "O_1", name: "Todo" }, { id: "O_2", name: "Done" }] },
     ]);
+  });
+
+  it("returns an empty list when projectId is blank without calling GitHub", async () => {
+    let called = false;
+    vi.stubGlobal("fetch", async () => {
+      called = true;
+      return new Response("unexpected", { status: 500 });
+    });
+    const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: generateRsaPrivateKeyPem() });
+    for (const projectId of ["", "   "]) {
+      await expect(resolveProjectV2Fields({ env, installationId: 123, repoFullName: "some-org/gittensory" }, projectId)).resolves.toEqual([]);
+    }
+    expect(called).toBe(false);
   });
 
   it("returns an empty list when the project node has no fields (e.g. not found / inaccessible)", async () => {

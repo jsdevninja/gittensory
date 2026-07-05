@@ -166,6 +166,7 @@ type PullRequestNodeIdResponse = {
  * custom field are two independent GraphQL mutations, and this PR only needs the first).
  */
 export async function resolveProjectV2Fields(ctx: ProjectTrackerContext, projectId: string): Promise<ProjectV2Field[]> {
+  if (typeof projectId !== "string" || projectId.trim().length === 0) return [];
   const token = await createInstallationToken(ctx.env, ctx.installationId);
   const octokit = makeInstallationOctokit(ctx.env, token, "live", githubRateLimitAdmissionKeyForInstallation(ctx.installationId));
   const response = await octokit.graphql<ProjectFieldsGraphQlResponse>(
@@ -226,6 +227,7 @@ export class GitHubProjectsAdapter implements ProjectTrackerAdapter {
   }
 
   async attachToProject(ctx: ProjectTrackerContext, pullNumber: number, projectId: string): Promise<ProjectTrackerAttachResult> {
+    if (typeof projectId !== "string" || projectId.trim().length === 0) return { attached: false };
     const { owner, repo } = parseRepoFullName(ctx.repoFullName);
     const token = await createInstallationToken(ctx.env, ctx.installationId);
     const octokit = makeInstallationOctokit(ctx.env, token, "live", githubRateLimitAdmissionKeyForInstallation(ctx.installationId));
