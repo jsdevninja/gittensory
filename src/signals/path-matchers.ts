@@ -52,9 +52,12 @@ function isGeneratedFileFrom(parts: NormalizedPath): boolean {
     /\.(generated|gen)\.[^/]+$/.test(norm) ||
     // protoc output: Go/TS/JS plugins emit `.pb.{go,ts,js}`, the reference C++ plugin emits
     // `.pb.cc` / `.pb.h`, the Swift plugin emits `.pb.swift`, the Dart plugin emits `.pb.dart`,
-    // the Kotlin plugin emits `.pb.kt`, and the C# plugin emits `.pb.cs`.
+    // the Kotlin plugin emits `.pb.kt`, the C# plugin emits `.pb.cs`, and the Objective-C plugin
+    // emits `.pbobjc.{h,m}` plus gRPC `.pbrpc.{h,m}` service stubs.
     // `.pb.dart`/`.pb.kt`/`.pb.cs` (the `.pb` infix keeps hand-written sources from matching).
     /\.pb\.(go|ts|js|cc|h|swift|dart|kt|cs)$/.test(norm) ||
+    /\.pbobjc\.(h|m)$/.test(norm) ||
+    /\.pbrpc\.(h|m)$/.test(norm) ||
     // Python protobuf: message stubs are `*_pb2.py[i]`; the gRPC plugin emits sibling
     // `*_pb2_grpc.py[i]` service stubs, which are the same machine-generated output.
     /_pb2(_grpc)?\.pyi?$/.test(norm) ||
@@ -63,9 +66,9 @@ function isGeneratedFileFrom(parts: NormalizedPath): boolean {
     /\.(g|freezed|gr)\.dart$/.test(norm) ||
     // C# codegen: WinForms/WPF designer partials (`.designer.cs`) and XAML/T4 output (`.g.cs`).
     /\.(designer|g)\.cs$/.test(norm) ||
-    // Source maps for every first-class JS/TS bundle extension. `.mjs`/`.cjs` are already
-    // recognized code extensions (isCodeFile), so their bundlers' `.mjs.map` / `.cjs.map`
-    // maps are generated output too — the same as `.js.map`.
+    // Source maps for bundler/front-end output across JS/TS, frameworks, stylesheets, HTML, and SVG.
+    // `.mjs`/`.cjs` are already recognized code extensions (isCodeFile), so their bundlers'
+    // `.mjs.map` / `.cjs.map` maps are generated output too — the same as `.js.map`.
     /\.(js|jsx|mjs|cjs|ts|tsx|mts|cts|vue|svelte|astro|mdx|scss|sass|less|html|svg|css)\.map$/.test(norm) ||
     base === "worker-configuration.d.ts"
   );

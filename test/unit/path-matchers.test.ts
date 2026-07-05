@@ -77,12 +77,16 @@ describe("isGeneratedFile", () => {
     }
   });
 
-  it("matches Swift protobuf, Dart freezed/retrofit, and C# designer/XAML codegen", () => {
+  it("matches Swift protobuf, Dart freezed/retrofit, C# designer/XAML, and Objective-C protoc output", () => {
     for (const path of [
       "proto/messages.pb.swift",
       "proto/messages.pb.dart",
       "proto/messages.pb.kt",
       "proto/messages.pb.cs",
+      "proto/messages.pbobjc.h",
+      "proto/messages.pbobjc.m",
+      "proto/messages.pbrpc.h",
+      "proto/messages.pbrpc.m",
       "lib/user.freezed.dart",
       "lib/api_client.gr.dart",
       "ui/MainForm.Designer.cs",
@@ -91,7 +95,7 @@ describe("isGeneratedFile", () => {
       expect(isGeneratedFile(path)).toBe(true);
     }
     // hand-written siblings must NOT match (the codegen infix is required).
-    for (const path of ["src/MainForm.cs", "lib/user.dart", "src/service.kt", "net/message.swift"]) {
+    for (const path of ["src/MainForm.cs", "lib/user.dart", "src/service.kt", "net/message.swift", "src/App.h", "src/App.m"]) {
       expect(isGeneratedFile(path)).toBe(false);
     }
   });
