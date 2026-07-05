@@ -471,6 +471,40 @@ test("scanPatch does not flag truncated Twilio SIDs or identifier continuation p
   );
 });
 
+test("scanPatch flags Resend and Mapbox secret tokens with high confidence", () => {
+  const fakeResendKey = "re_" + "a".repeat(32);
+  const resendFindings = scanPatch("src/config.ts", hunk([`const resend = "${fakeResendKey}";`]));
+  assert.equal(resendFindings.length, 1);
+  assert.equal(resendFindings[0].kind, "resend_api_key");
+  assert.equal(resendFindings[0].confidence, "high");
+
+  const fakeMapboxSecret = ["sk.", "eyJ", "a".repeat(24)].join("");
+  const mapboxFindings = scanPatch("src/config.ts", hunk([`const mapbox = "${fakeMapboxSecret}";`]));
+  assert.equal(mapboxFindings.length, 1);
+  assert.equal(mapboxFindings[0].kind, "mapbox_secret_token");
+  assert.equal(mapboxFindings[0].confidence, "high");
+});
+
+test("scanPatch does not flag truncated Resend keys or classify Mapbox secrets as Stripe keys", () => {
+  const truncatedResend = "re_" + "a".repeat(23);
+  assert.equal(scanPatch("src/config.ts", hunk([`const resend = "${truncatedResend}";`])).length, 0);
+
+  const fakeMapboxSecret = ["sk.", "eyJ", "c".repeat(24)].join("");
+  const findings = scanPatch("src/config.ts", hunk([`const mapbox = "${fakeMapboxSecret}";`]));
+  assert.equal(findings.some((f) => f.kind === "stripe_secret_key"), false);
+  assert.equal(findings.some((f) => f.kind === "mapbox_secret_token"), true);
+});
+
+test("scanPatch does not flag truncated Mapbox secrets or public pk tokens", () => {
+  const truncated = ["sk.", "eyJ", "a".repeat(23)].join("");
+  assert.equal(scanPatch("src/config.ts", hunk([`const mapbox = "${truncated}";`])).length, 0);
+  const publicToken = ["pk.", "eyJ", "b".repeat(24)].join("");
+  assert.equal(
+    scanPatch("src/config.ts", hunk([`const mapbox = "${publicToken}";`])).some((f) => f.kind === "mapbox_secret_token"),
+    false,
+  );
+});
+
 test("scanPatch flags additional high-confidence SaaS/cloud/CI credential formats", () => {
   const cases = [
     ["google_oauth_client_secret", "GOCSPX-" + b62(28)],
