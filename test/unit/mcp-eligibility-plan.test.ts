@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it } from "vitest";
-import { upsertRepositoryFromGitHub } from "../../src/db/repositories";
+import { upsertIssueFromGitHub, upsertRepositoryFromGitHub } from "../../src/db/repositories";
 import { GittensoryMcp } from "../../src/mcp/server";
 import { createTestEnv } from "../helpers/d1";
 
@@ -110,5 +110,34 @@ describe("MCP gittensory_get_eligibility_plan (#2222)", () => {
     expect(plan.branchEligibilityStatus).toBe("unknown");
     expect(plan.publicSummary).toMatch(/not yet validated/i);
     expect(plan.cleanupPaths.join(" ")).toMatch(/solved-by-PR|mirror/i);
+  });
+
+  it("uses contributor-scoped issue counts when contributorLogin is supplied", async () => {
+    const env = createTestEnv();
+    await upsertRepositoryFromGitHub(env, { name: "demo", full_name: "octo/demo", private: false, owner: { login: "octo" }, default_branch: "main" });
+    for (const number of [1, 2, 3]) {
+      await upsertIssueFromGitHub(env, "octo/demo", {
+        number,
+        title: `Open contributor issue ${number}`,
+        state: "open",
+        user: { login: "alice" },
+        labels: [],
+        body: "Issue body",
+      });
+    }
+    const server = new GittensoryMcp(env).createServer();
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const client = new Client({ name: "gittensory-eligibility-plan-contributor-test", version: "0.1.0" }, { capabilities: {} });
+    await client.connect(clientTransport);
+
+    const plan = await callPlan(client, {
+      ...BASE_ARGS,
+      contributorLogin: "alice",
+      linkedIssueMode: "none",
+    });
+
+    expect(plan.linkedIssueStatus).toBe("not_required");
+    expect(plan.branchEligibilityStatus).toBe("not_required");
   });
 });
