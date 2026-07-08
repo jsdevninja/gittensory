@@ -370,6 +370,26 @@ export const SELFHOST_ENV_REFERENCE_ROWS: SelfHostEnvReferenceRow[] = [
     firstReference: "src/server.ts",
   },
   {
+    name: "REVIEW_AUDIT_S3_ACCESS_KEY_ID",
+    firstReference: "src/server.ts",
+  },
+  {
+    name: "REVIEW_AUDIT_S3_BUCKET",
+    firstReference: "src/server.ts",
+  },
+  {
+    name: "REVIEW_AUDIT_S3_ENDPOINT",
+    firstReference: "src/server.ts",
+  },
+  {
+    name: "REVIEW_AUDIT_S3_REGION",
+    firstReference: "src/server.ts",
+  },
+  {
+    name: "REVIEW_AUDIT_S3_SECRET_ACCESS_KEY",
+    firstReference: "src/server.ts",
+  },
+  {
     name: "SELFHOST_BUNDLE_ALL",
     firstReference: "scripts/build-selfhost.mjs",
   },
@@ -505,6 +525,11 @@ export const SELFHOST_ENV_REFERENCE_MARKDOWN = [
   "| `QUEUE_STARTUP_JITTER_MIN_JOBS` | `src/selfhost/queue-common.ts` |",
   "| `REDIS_URL` | `src/selfhost/preflight.ts` |",
   "| `REVIEW_AUDIT_DIR` | `src/server.ts` |",
+  "| `REVIEW_AUDIT_S3_ACCESS_KEY_ID` | `src/server.ts` |",
+  "| `REVIEW_AUDIT_S3_BUCKET` | `src/server.ts` |",
+  "| `REVIEW_AUDIT_S3_ENDPOINT` | `src/server.ts` |",
+  "| `REVIEW_AUDIT_S3_REGION` | `src/server.ts` |",
+  "| `REVIEW_AUDIT_S3_SECRET_ACCESS_KEY` | `src/server.ts` |",
   "| `SELFHOST_BUNDLE_ALL` | `scripts/build-selfhost.mjs` |",
   "| `SELFHOST_SERVICE` | `scripts/smoke-observability-traces.mjs` |",
   "| `SELFHOST_SETUP_TOKEN` | `src/selfhost/preflight.ts` |",

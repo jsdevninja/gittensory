@@ -638,6 +638,133 @@ describe("buildCapture pixel-diff wiring (#3674)", () => {
   });
 });
 
+describe("buildCapture with REVIEW_AUDIT_S3_PUBLIC_URL configured (direct bucket links)", () => {
+  it("links an already-cached shot directly at the bucket instead of this instance's /gittensory/shot proxy", async () => {
+    const env = createTestEnv({
+      PUBLIC_API_ORIGIN: "https://worker.example",
+      PUBLIC_SITE_ORIGIN: "https://prod.example.com",
+      REVIEW_AUDIT: memoryReviewAudit(),
+      REVIEW_AUDIT_S3_PUBLIC_URL: "https://pub-abc123.r2.dev",
+    });
+    const afterKey = await shotKey(30, "after", "desktop", "https://preview.example.com/app");
+    await env.REVIEW_AUDIT!.put(afterKey, new Uint8Array([1, 2, 3]));
+    const result = await buildCapture(
+      env,
+      "installation-token",
+      { repoFullName: "owner/repo", prNumber: 30, previewUrl: "https://preview.example.com" },
+      ["apps/gittensory-ui/src/routes/app.index.tsx"],
+    );
+    expect(result.routes[0]?.afterUrl).toBe(`https://pub-abc123.r2.dev/${afterKey}`);
+    expect(result.routes[0]?.afterUrl).not.toContain("/gittensory/shot?key=");
+  });
+
+  it("strips a trailing slash from REVIEW_AUDIT_S3_PUBLIC_URL before joining the key", async () => {
+    const env = createTestEnv({
+      PUBLIC_API_ORIGIN: "https://worker.example",
+      PUBLIC_SITE_ORIGIN: "https://prod.example.com",
+      REVIEW_AUDIT: memoryReviewAudit(),
+      REVIEW_AUDIT_S3_PUBLIC_URL: "https://pub-abc123.r2.dev/",
+    });
+    const afterKey = await shotKey(31, "after", "desktop", "https://preview.example.com/app");
+    await env.REVIEW_AUDIT!.put(afterKey, new Uint8Array([1, 2, 3]));
+    const result = await buildCapture(
+      env,
+      "installation-token",
+      { repoFullName: "owner/repo", prNumber: 31, previewUrl: "https://preview.example.com" },
+      ["apps/gittensory-ui/src/routes/app.index.tsx"],
+    );
+    expect(result.routes[0]?.afterUrl).toBe(`https://pub-abc123.r2.dev/${afterKey}`); // no double slash
+  });
+
+  it("wins over PUBLIC_API_ORIGIN when both are configured", async () => {
+    const env = createTestEnv({
+      PUBLIC_API_ORIGIN: "https://worker.example",
+      PUBLIC_SITE_ORIGIN: "https://prod.example.com",
+      REVIEW_AUDIT: memoryReviewAudit(),
+      REVIEW_AUDIT_S3_PUBLIC_URL: "https://pub-abc123.r2.dev",
+    });
+    const beforeKey = await shotKey(32, "before", "desktop", "https://prod.example.com/app");
+    await env.REVIEW_AUDIT!.put(beforeKey, new Uint8Array([1, 2, 3]));
+    const result = await buildCapture(
+      env,
+      "installation-token",
+      { repoFullName: "owner/repo", prNumber: 32, previewUrl: "https://preview.example.com" },
+      ["apps/gittensory-ui/src/routes/app.index.tsx"],
+    );
+    expect(result.routes[0]?.beforeUrl).toContain("pub-abc123.r2.dev");
+    expect(result.routes[0]?.beforeUrl).not.toContain("worker.example");
+  });
+
+  it("the on-demand (?url=) fallback still goes through this instance's own PUBLIC_API_ORIGIN even with a public bucket configured — rendering only ever happens here", async () => {
+    const env = createTestEnv({
+      PUBLIC_API_ORIGIN: "https://worker.example",
+      PUBLIC_SITE_ORIGIN: "https://prod.example.com",
+      // REVIEW_AUDIT deliberately absent: forces the onDemand fallback path in capturePage.
+      REVIEW_AUDIT_S3_PUBLIC_URL: "https://pub-abc123.r2.dev",
+    });
+    const result = await buildCapture(
+      env,
+      "installation-token",
+      { repoFullName: "owner/repo", prNumber: 23, previewUrl: "https://preview.example.com" },
+      ["apps/gittensory-ui/src/routes/app.index.tsx"],
+    );
+    expect(result.routes[0]?.afterUrl).toContain("worker.example/gittensory/shot?url=");
+  });
+
+  it("uploadDiffImage links directly at the bucket even when PUBLIC_API_ORIGIN is unset (S3 public URL alone is enough)", async () => {
+    const availableSpy = vi.spyOn(pixelDiffModule, "isVisualDiffAvailable").mockReturnValue(true);
+    const compareSpy = vi.spyOn(pixelDiffModule, "compareCapturedScreenshots").mockResolvedValue({
+      status: "changed",
+      changedPixelPercent: 15,
+      diffImagePng: new Uint8Array([3, 3, 3]),
+    });
+    try {
+      const env = createTestEnv({
+        PUBLIC_API_ORIGIN: "",
+        PUBLIC_SITE_ORIGIN: "https://prod.example.com",
+        REVIEW_AUDIT: memoryReviewAudit(),
+        REVIEW_AUDIT_S3_PUBLIC_URL: "https://pub-abc123.r2.dev",
+      });
+      const result = await buildCapture(
+        env,
+        "installation-token",
+        { repoFullName: "owner/repo", prNumber: 24, previewUrl: "https://preview.example.com" },
+        ["apps/gittensory-ui/src/routes/app.index.tsx"],
+      );
+      expect(result.routes[0]?.diffUrl).toMatch(/^https:\/\/pub-abc123\.r2\.dev\//);
+    } finally {
+      availableSpy.mockRestore();
+      compareSpy.mockRestore();
+    }
+  });
+
+  it("uploadDiffImage still skips gracefully when NEITHER PUBLIC_API_ORIGIN nor the S3 public URL is configured", async () => {
+    const availableSpy = vi.spyOn(pixelDiffModule, "isVisualDiffAvailable").mockReturnValue(true);
+    const compareSpy = vi.spyOn(pixelDiffModule, "compareCapturedScreenshots").mockResolvedValue({
+      status: "changed",
+      changedPixelPercent: 15,
+      diffImagePng: new Uint8Array([3, 3, 3]),
+    });
+    try {
+      const env = createTestEnv({
+        PUBLIC_API_ORIGIN: "",
+        PUBLIC_SITE_ORIGIN: "https://prod.example.com",
+        REVIEW_AUDIT: memoryReviewAudit(),
+      });
+      const result = await buildCapture(
+        env,
+        "installation-token",
+        { repoFullName: "owner/repo", prNumber: 25, previewUrl: "https://preview.example.com" },
+        ["apps/gittensory-ui/src/routes/app.index.tsx"],
+      );
+      expect(result.routes[0]?.diffUrl).toBeUndefined();
+    } finally {
+      availableSpy.mockRestore();
+      compareSpy.mockRestore();
+    }
+  });
+});
+
 describe("buildCapture theme matrix (#3678)", () => {
   it("produces exactly one untagged route per path when no themes are configured — byte-identical to pre-#3678", async () => {
     const result = await buildCapture(
@@ -927,6 +1054,37 @@ describe("buildCapture scroll-GIF wiring (#3612)", () => {
       expect(result.routes[0]?.beforeGifUrl).toContain("/gittensory/shot?key=");
       expect(result.routes[0]?.afterGifUrl).toContain("/gittensory/shot?key=");
       expect(result.routes[0]?.beforeGifUrl).not.toBe(result.routes[0]?.afterGifUrl);
+    } finally {
+      gifAvailableSpy.mockRestore();
+      captureScrollSpy.mockRestore();
+      encodeSpy.mockRestore();
+    }
+  });
+
+  it("links scroll GIFs directly at the bucket when REVIEW_AUDIT_S3_PUBLIC_URL is configured, even with PUBLIC_API_ORIGIN unset", async () => {
+    const gifAvailableSpy = vi.spyOn(scrollGifModule, "isScrollGifAvailable").mockReturnValue(true);
+    const captureScrollSpy = vi.spyOn(shotModule, "captureScrollFrames").mockResolvedValue({
+      frames: [new Uint8Array([1, 2, 3])],
+      authWalled: false,
+    });
+    const encodeSpy = vi.spyOn(scrollGifModule, "encodeScrollGif").mockResolvedValue(new Uint8Array([7, 8, 9]));
+    try {
+      const env = createTestEnv({
+        PUBLIC_API_ORIGIN: "",
+        PUBLIC_SITE_ORIGIN: "https://prod.example.com",
+        REVIEW_AUDIT: memoryReviewAudit(),
+        REVIEW_AUDIT_S3_PUBLIC_URL: "https://pub-abc123.r2.dev",
+      });
+      const result = await buildCapture(
+        env,
+        "installation-token",
+        { repoFullName: "owner/repo", prNumber: 33, previewUrl: "https://preview.example.com" },
+        ["apps/gittensory-ui/src/routes/app.index.tsx"],
+        undefined,
+        { gif: true },
+      );
+      expect(result.routes[0]?.beforeGifUrl).toMatch(/^https:\/\/pub-abc123\.r2\.dev\//);
+      expect(result.routes[0]?.afterGifUrl).toMatch(/^https:\/\/pub-abc123\.r2\.dev\//);
     } finally {
       gifAvailableSpy.mockRestore();
       captureScrollSpy.mockRestore();
@@ -1498,6 +1656,51 @@ describe("review.visual.actions_fallback (#4112 GitHub-Actions build-and-serve f
     );
 
     expect(result.routes[0]?.afterUrl).toBe(`https://worker.example/gittensory/shot?key=${encodeURIComponent(key)}`);
+  });
+
+  it("links an already-stored fallback shot directly at the bucket when REVIEW_AUDIT_S3_PUBLIC_URL is configured", async () => {
+    vi.stubGlobal("fetch", stubNoPreviewFound());
+    const env = createTestEnv({
+      PUBLIC_API_ORIGIN: "https://worker.example",
+      PUBLIC_SITE_ORIGIN: "https://prod.example.com",
+      REVIEW_AUDIT: memoryReviewAudit(),
+      REVIEW_AUDIT_S3_PUBLIC_URL: "https://pub-abc123.r2.dev",
+    });
+    const key = await fallbackShotR2Key("cafebabe", "/app", "desktop");
+    await env.REVIEW_AUDIT!.put(key, new Uint8Array([1, 2, 3]));
+
+    const result = await buildCapture(
+      env,
+      "installation-token",
+      { repoFullName: "owner/repo", prNumber: 29, headSha: "cafebabe", previewFromChecks: true, defaultBranchRef: "main" },
+      ["apps/gittensory-ui/src/routes/app.index.tsx"],
+      undefined,
+      { actionsFallback: true },
+    );
+
+    expect(result.routes[0]?.afterUrl).toBe(`https://pub-abc123.r2.dev/${key}`);
+  });
+
+  it("degrades to no after URL at all when a fallback shot is cached but neither PUBLIC_API_ORIGIN nor REVIEW_AUDIT_S3_PUBLIC_URL is configured (nothing servable can be constructed, not even a placeholder)", async () => {
+    vi.stubGlobal("fetch", stubNoPreviewFound());
+    const env = createTestEnv({
+      PUBLIC_API_ORIGIN: "",
+      PUBLIC_SITE_ORIGIN: "https://prod.example.com",
+      REVIEW_AUDIT: memoryReviewAudit(),
+    });
+    const key = await fallbackShotR2Key("cafebabe", "/app", "desktop");
+    await env.REVIEW_AUDIT!.put(key, new Uint8Array([1, 2, 3]));
+
+    const result = await buildCapture(
+      env,
+      "installation-token",
+      { repoFullName: "owner/repo", prNumber: 31, headSha: "cafebabe", previewFromChecks: true, defaultBranchRef: "main" },
+      ["apps/gittensory-ui/src/routes/app.index.tsx"],
+      undefined,
+      { actionsFallback: true },
+    );
+
+    expect(result.routes[0]?.afterUrl).toBeUndefined();
   });
 
   it("falls back to the loading placeholder when actions_fallback is enabled but no shot has landed in R2 yet", async () => {

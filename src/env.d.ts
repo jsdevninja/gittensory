@@ -18,8 +18,19 @@ declare global {
     /** Self-host RAG vector width. Must match the configured embedding model and vector backend. */
     QDRANT_DIM?: string;
     /** Optional self-host review audit + visual-capture blob store. The Node runtime injects a filesystem-backed
-     *  store when REVIEW_AUDIT_DIR is set; the Cloudflare API worker no longer binds the review R2 bucket. */
+     *  store when REVIEW_AUDIT_DIR is set, or an S3-compatible-bucket-backed store (an operator's own Cloudflare
+     *  R2 bucket, or any other S3-compatible provider) when REVIEW_AUDIT_S3_BUCKET + _ENDPOINT +
+     *  _ACCESS_KEY_ID + _SECRET_ACCESS_KEY are all set (takes priority when both are configured); the
+     *  Cloudflare API worker no longer binds the review R2 bucket. */
     REVIEW_AUDIT?: R2Bucket;
+    /** Public base URL for an S3-compatible REVIEW_AUDIT bucket's own public read access (an R2 `r2.dev` public
+     *  bucket URL, or a custom domain connected to the bucket) -- see src/selfhost/s3-blob-store.ts. When set,
+     *  capture.ts's resolveShotUrl links screenshots DIRECTLY at `${this}/${key}` so GitHub's image proxy (and
+     *  every other viewer) fetches straight from the bucket's own CDN, never touching this instance's
+     *  PUBLIC_API_ORIGIN at all. Unset (default) ⇒ served through this instance's own /gittensory/shot?key=
+     *  proxy route instead, exactly as before -- the bucket still gets used for storage, just not linked to
+     *  directly. Only meaningful alongside a configured REVIEW_AUDIT_S3_* bucket; ignored otherwise. */
+    REVIEW_AUDIT_S3_PUBLIC_URL?: string;
     /** Optional visual capture binding. Self-host exposes this when BROWSER_WS_ENDPOINT is set; the Cloudflare API
      *  worker no longer binds Browser Rendering for reviews. */
     BROWSER?: Fetcher;
@@ -206,13 +217,15 @@ declare global {
     /** Convergence (visual capture): when truthy, the review path captures a before/after screenshot for
      *  PRs that touch WEB-VISIBLE files (frontend pages / public OG images — see review/visual/paths.ts
      *  isVisualPath). "before" = production (PUBLIC_SITE_ORIGIN); "after" = the PR's preview deploy. Each shot
-     *  is rendered via the optional BROWSER binding, stored through REVIEW_AUDIT when configured, and embedded in
-     *  the unified PR comment as a "Visual preview" table served from the PUBLIC /gittensory/shot route. Self-host
-     *  equivalents are BROWSER_WS_ENDPOINT + REVIEW_AUDIT_DIR; degrades gracefully (placeholders / dashes) without
-     *  them. Backend .ts/.md/.json/.py PRs NEVER trigger capture. Capture runs for a repo ONLY IF this flag is
-     *  ON *AND* the repo is in GITTENSORY_REVIEW_REPOS (the per-repo cutover allowlist) — see
-     *  review/visual-wire.ts screenshotsAllowed. Default OFF — unset/false captures nothing (no render, no audit
-     *  write, no comment change) so the review path is byte-identical to today. */
+     *  is rendered via the optional BROWSER binding, stored through REVIEW_AUDIT when configured, and embedded
+     *  in the unified PR comment as a "Visual preview" table — served either from this instance's own PUBLIC
+     *  /gittensory/shot route, or, when REVIEW_AUDIT_S3_PUBLIC_URL is set, directly from the operator's own
+     *  S3-compatible bucket instead (see src/selfhost/s3-blob-store.ts). Self-host equivalents are
+     *  BROWSER_WS_ENDPOINT + (REVIEW_AUDIT_DIR or the REVIEW_AUDIT_S3_* bucket vars); degrades gracefully
+     *  (placeholders / dashes) without them. Backend .ts/.md/.json/.py PRs NEVER trigger capture. Capture runs
+     *  for a repo ONLY IF this flag is ON *AND* the repo is in GITTENSORY_REVIEW_REPOS (the per-repo cutover
+     *  allowlist) — see review/visual-wire.ts screenshotsAllowed. Default OFF — unset/false captures nothing
+     *  (no render, no audit write, no comment change) so the review path is byte-identical to today. */
     GITTENSORY_REVIEW_SCREENSHOTS?: string;
     /** Convergence (grounding): when truthy, the AI reviewer prompt is GROUNDED — the PR's finished CI status
      *  + the FULL post-change content of the changed files are appended so a non-frontier model verifies its

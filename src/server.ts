@@ -65,6 +65,7 @@ import type { DurableQueue } from "./selfhost/backend-contracts";
 import { createSqliteQueue } from "./selfhost/sqlite-queue";
 import { createSqliteVectorize } from "./selfhost/vectorize";
 import { createFsBlobStore } from "./selfhost/blob-store";
+import { createS3BlobStore } from "./selfhost/s3-blob-store";
 import {
   makeLocalManifestReader,
   makeLocalReviewContextReader,
@@ -267,6 +268,27 @@ function buildSqliteBackend(
       }
     },
   };
+}
+
+/** Resolve the REVIEW_AUDIT blob-store binding from env vars, or undefined for the on-demand (no persistence)
+ *  default. An S3-compatible bucket (an operator's own Cloudflare R2 bucket, or any other S3-compatible
+ *  provider) takes priority over the plain filesystem store when both are configured -- S3 is the one that can
+ *  actually be made publicly reachable without exposing this instance itself (see s3-blob-store.ts's own
+ *  header comment), so it's the strictly more capable option when an operator has set up both. */
+function resolveReviewAuditBinding(): R2Bucket | undefined {
+  const { REVIEW_AUDIT_S3_BUCKET, REVIEW_AUDIT_S3_ENDPOINT, REVIEW_AUDIT_S3_ACCESS_KEY_ID, REVIEW_AUDIT_S3_SECRET_ACCESS_KEY, REVIEW_AUDIT_S3_REGION } =
+    process.env;
+  if (REVIEW_AUDIT_S3_BUCKET && REVIEW_AUDIT_S3_ENDPOINT && REVIEW_AUDIT_S3_ACCESS_KEY_ID && REVIEW_AUDIT_S3_SECRET_ACCESS_KEY) {
+    return createS3BlobStore({
+      bucket: REVIEW_AUDIT_S3_BUCKET,
+      endpoint: REVIEW_AUDIT_S3_ENDPOINT,
+      accessKeyId: REVIEW_AUDIT_S3_ACCESS_KEY_ID,
+      secretAccessKey: REVIEW_AUDIT_S3_SECRET_ACCESS_KEY,
+      ...(REVIEW_AUDIT_S3_REGION ? { region: REVIEW_AUDIT_S3_REGION } : {}),
+    });
+  }
+  if (process.env.REVIEW_AUDIT_DIR) return createFsBlobStore(process.env.REVIEW_AUDIT_DIR);
+  return undefined;
 }
 
 async function main(): Promise<void> {
@@ -584,12 +606,13 @@ async function main(): Promise<void> {
     // Visual review: when BROWSER_WS_ENDPOINT is set, expose a truthy BROWSER binding so shot.ts's
     // `if (!env.BROWSER) return` guard is bypassed; the puppeteer stub then connects via WS.
     ...(process.env.BROWSER_WS_ENDPOINT ? { BROWSER: {} } : {}),
-    // Visual screenshot persistence (#10): bind an fs-backed REVIEW_AUDIT store when REVIEW_AUDIT_DIR is set so
-    // captured PNGs are cached + served from /gittensory/shot?key=… instead of re-rendering on demand. Unset ⇒
-    // no binding ⇒ on-demand behavior, byte-identical to before.
-    ...(process.env.REVIEW_AUDIT_DIR
-      ? { REVIEW_AUDIT: createFsBlobStore(process.env.REVIEW_AUDIT_DIR) }
-      : {}),
+    // Visual screenshot persistence (#10 / S3-bucket support): bind a REVIEW_AUDIT store (S3-compatible bucket,
+    // or plain filesystem — see resolveReviewAuditBinding) so captured PNGs are cached instead of re-rendering
+    // on demand. Unset (neither configured) ⇒ no binding ⇒ on-demand behavior, byte-identical to before.
+    ...(() => {
+      const binding = resolveReviewAuditBinding();
+      return binding ? { REVIEW_AUDIT: binding } : {};
+    })(),
   } as unknown as Env;
 
   // GitHub App auth: a successful JWT mint proves GITHUB_APP_PRIVATE_KEY is set and parses as a valid signing
