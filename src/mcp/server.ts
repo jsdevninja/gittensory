@@ -82,6 +82,7 @@ import {
 import { loadContributorDecisionPackForServing, repoDecisionFromPack } from "../services/decision-pack";
 import { buildPublicPrBodyDraft } from "../services/pr-body-draft";
 import { buildRemediationPlan } from "../services/remediation-plan";
+import { deriveEligibilityPlan } from "../services/eligibility-plan";
 import { explainScoreBreakdown } from "../services/score-breakdown";
 import { loadOrComputeIssueQualityResponse } from "../services/issue-quality";
 import { loadOrComputeBurdenForecastResponse } from "../services/burden-forecast";
@@ -1043,6 +1044,16 @@ const scoreBreakdownOutputSchema = {
   highestLeverageLever: z.unknown().optional(),
 };
 
+const eligibilityPlanOutputSchema = {
+  eligible: z.boolean().optional(),
+  linkedIssueStatus: z.string().optional(),
+  branchEligibilityStatus: z.string().optional(),
+  blockers: z.array(z.string()).optional(),
+  cleanupPaths: z.array(z.string()).optional(),
+  linkedIssueProjection: z.string().nullable().optional(),
+  publicSummary: z.string().optional(),
+};
+
 const lintPrTextOutputSchema = {
   verdict: z.string().optional(),
   score: z.number().optional(),
@@ -1620,6 +1631,17 @@ export class GittensoryMcp {
         outputSchema: scorePreviewRecordOutputSchema,
       },
       async (input) => this.toolResult(await this.previewScore(input)),
+    );
+
+    server.registerTool(
+      "gittensory_get_eligibility_plan",
+      {
+        description:
+          "Derive a structured eligibility plan from local score-preview metadata: whether the branch/PR is eligible now, public-safe blockers, and cleanup paths. Advisory dry-run only — no GitHub writes.",
+        inputSchema: scorePreviewShape,
+        outputSchema: eligibilityPlanOutputSchema,
+      },
+      async (input) => this.toolResult(await this.getEligibilityPlan(input)),
     );
 
     server.registerTool(
@@ -2796,6 +2818,25 @@ export class GittensoryMcp {
     return {
       summary: `Private Gittensory scoring preview for ${input.repoFullName}.`,
       data: makeScorePreviewRecord(scoreInput, snapshot, result) as unknown as Record<string, unknown>,
+    };
+  }
+
+  private async getEligibilityPlan(input: z.infer<z.ZodObject<typeof scorePreviewShape>>): Promise<ToolPayload> {
+    if (input.contributorLogin) this.requireContributorAccess(input.contributorLogin);
+    await this.requireRepoAccess(input.repoFullName);
+    const [repo, snapshot, evidence, contributorIssues] = await Promise.all([
+      getRepository(this.env, input.repoFullName),
+      getOrCreateScoringModelSnapshot(this.env),
+      input.contributorLogin ? getContributorEvidence(this.env, input.contributorLogin) : Promise.resolve(null),
+      input.contributorLogin ? listContributorIssues(this.env, input.contributorLogin) : Promise.resolve([]),
+    ]);
+    const openIssueCount = contributorOpenIssueCount(contributorIssues, input.repoFullName);
+    const scoreInput = { ...input, openIssueCount, applyTimeDecay: isTimeDecayEnabled(this.env) };
+    const preview = buildScorePreview({ input: scoreInput, repo, snapshot, contributorEvidence: evidence });
+    const plan = deriveEligibilityPlan(preview);
+    return {
+      summary: plan.publicSummary,
+      data: plan as unknown as Record<string, unknown>,
     };
   }
 
