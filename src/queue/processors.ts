@@ -416,6 +416,7 @@ import {
   isContributorControlledAutoReviewSkipReason,
   resolveRepoEnrichmentToggles,
   resolveReviewAutoReviewConfig,
+  isAutoReviewCommitThresholdReached,
   resolveReviewPathInstructions,
   resolveReviewPreMergeChecks,
   resolveReviewPromptOverrides,
@@ -7689,6 +7690,12 @@ export async function maybeAddLockfileTamperFinding(
  * path, it runs ONLY for confirmed contributors so an unconfirmed/untrusted PR author cannot spend either the
  * shared Workers AI budget or the maintainer-paid BYOK quota. Fail-safe: any AI error is swallowed so the
  * gate still finalizes.
+ *
+ * `commitThresholdReached` (#ai-slop-repeat-spend): mirrors `ai_review`'s OWN `auto_pause_after_reviewed_commits`
+ * cap (`isAutoReviewCommitThresholdReached`) — a PR that's already been reviewed this many times at essentially
+ * its current state stops getting a fresh slop advisory too. Before this, every sweep pass re-ran the FULL
+ * advisory regardless of how many times the SAME head had already been checked (only a headSha+prompt-fingerprint
+ * cache guarded re-spend, so a stale PR the sweep kept re-visiting paid for a fresh attempt on every pass).
  */
 export async function runAiSlopForAdvisory(
   env: Env,
@@ -7704,11 +7711,26 @@ export async function runAiSlopForAdvisory(
     files: Awaited<ReturnType<typeof listPullRequestFiles>>;
     deterministicBand: SlopBand;
     confirmedContributor: boolean;
+    commitThresholdReached: boolean;
   },
 ): Promise<void> {
   // Confirmed-contributor gate (matches runAiReviewForAdvisory): no AI spend — free OR BYOK — on a PR from
   // an unconfirmed author. The deterministic slop core still ran for everyone; only the AI layer is gated.
   if (args.mode === "paused" || !args.confirmedContributor || !args.advisory.headSha) return;
+  if (args.commitThresholdReached) {
+    await recordAuditEvent(env, {
+      eventType: "github_app.ai_slop_auto_review_skipped",
+      actor: args.author,
+      targetKey: `${args.repoFullName}#${args.pr.number}`,
+      outcome: "completed",
+      detail: "slop advisory paused (commit threshold); this head has already been reviewed enough times",
+      metadata: { repoFullName: args.repoFullName, headSha: args.advisory.headSha },
+    }).catch(
+      /* v8 ignore next -- fail-safe: an audit write failure never blocks the handler */
+      () => undefined,
+    );
+    return;
+  }
   try {
     // BYOK (opt-in): reuse the repo's encrypted key + aiReviewByok flag — one BYOK key serves both AI
     // features. A declared provider must match the stored key's provider, else skip BYOK (Workers-AI
@@ -9178,6 +9200,10 @@ async function maybePublishPrPublicSurface(
       // AI-assisted slop advisory (#533, opt-in). Reuses the already-fetched files; appends at most one
       // advisory-only finding. Deliberately does NOT update slopRisk — only the deterministic core blocks.
       if (shouldRunSlopAiAdvisory(settings)) {
+        // #ai-slop-repeat-spend: same commit-threshold cap ai_review already applies (auto_pause_after_reviewed_commits)
+        // — a PR the sweep keeps re-visiting stops getting a fresh slop advisory once it's been reviewed enough
+        // times, instead of re-attempting (and re-touching the shared neuron/provider budget) on every single pass.
+        const slopReviewedCommitCount = await countPublishedAiReviewHeads(env, repoFullName, pr.number).catch(() => 0);
         await runAiSlopForAdvisory(env, {
           mode,
           settings,
@@ -9188,6 +9214,7 @@ async function maybePublishPrPublicSurface(
           files: slopFiles,
           deterministicBand: slop.band,
           confirmedContributor,
+          commitThresholdReached: isAutoReviewCommitThresholdReached(autoReviewConfig, slopReviewedCommitCount),
         });
       }
     }
