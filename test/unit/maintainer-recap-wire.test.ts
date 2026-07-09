@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isRecapEnabled, runMaintainerRecapJob, shouldFireMaintainerRecap } from "../../src/review/maintainer-recap-wire";
+import { isRecapEnabled, resolveMaintainerRecapManifestOverride, runMaintainerRecapJob, shouldFireMaintainerRecap } from "../../src/review/maintainer-recap-wire";
 import { updatePullRequestSlopAssessment, upsertPullRequestFromGitHub, upsertRepositorySettings } from "../../src/db/repositories";
+import { upsertRepoFocusManifest } from "../../src/signals/focus-manifest-loader";
 import { createTestEnv } from "../helpers/d1";
+
+const SELF_REPO = "JSONbored/gittensory";
 
 const HOOK = "https://discord.com/api/webhooks/123/abc";
 
@@ -51,6 +54,16 @@ describe("isRecapEnabled — default OFF, truthy convention", () => {
     for (const off of [undefined, "", "false", "no", "0", "off"]) expect(isRecapEnabled({ GITTENSORY_MAINTAINER_RECAP: off })).toBe(false);
     for (const on of ["1", "true", "yes", "on", "TRUE", "On"]) expect(isRecapEnabled({ GITTENSORY_MAINTAINER_RECAP: on })).toBe(true);
   });
+
+  it("a present manifest override wins outright over the env flag, in both directions (#2250)", () => {
+    expect(isRecapEnabled({ GITTENSORY_MAINTAINER_RECAP: "false" }, { present: true, enabled: true, cadence: "weekly" })).toBe(true);
+    expect(isRecapEnabled({ GITTENSORY_MAINTAINER_RECAP: "true" }, { present: true, enabled: false, cadence: "weekly" })).toBe(false);
+  });
+
+  it("falls back to the env flag when the manifest override is not present", () => {
+    expect(isRecapEnabled({ GITTENSORY_MAINTAINER_RECAP: "true" }, { present: false, enabled: false, cadence: "weekly" })).toBe(true);
+    expect(isRecapEnabled({ GITTENSORY_MAINTAINER_RECAP: "false" }, undefined)).toBe(false);
+  });
 });
 
 describe("shouldFireMaintainerRecap — cadence gate (#2248)", () => {
@@ -95,6 +108,54 @@ describe("shouldFireMaintainerRecap — cadence gate (#2248)", () => {
   it("falls back to the default hour/day on a non-finite value", () => {
     const env = { GITTENSORY_RECAP_HOUR: "not-a-number", GITTENSORY_RECAP_DAY: "nope" };
     expect(shouldFireMaintainerRecap(env, 14, 1)).toBe(true); // falls back to 14 / Monday
+  });
+
+  it("a present manifest override's cadence wins over the env cadence, in both directions (#2250)", () => {
+    const dailyOverride = { present: true, enabled: true, cadence: "daily" } as const;
+    // env says weekly, manifest says daily -> fires on a non-Monday too (hour still gates).
+    expect(shouldFireMaintainerRecap({ GITTENSORY_RECAP_CADENCE: "weekly" }, 14, 3, dailyOverride)).toBe(true);
+    const weeklyOverride = { present: true, enabled: true, cadence: "weekly" } as const;
+    // env says daily, manifest says weekly -> does NOT fire on a non-Monday.
+    expect(shouldFireMaintainerRecap({ GITTENSORY_RECAP_CADENCE: "daily" }, 14, 3, weeklyOverride)).toBe(false);
+    expect(shouldFireMaintainerRecap({ GITTENSORY_RECAP_CADENCE: "daily" }, 14, 1, weeklyOverride)).toBe(true);
+  });
+
+  it("falls back to the env cadence when the manifest override is not present", () => {
+    const notPresent = { present: false, enabled: false, cadence: "daily" } as const;
+    expect(shouldFireMaintainerRecap({ GITTENSORY_RECAP_CADENCE: "weekly" }, 14, 3, notPresent)).toBe(false);
+  });
+});
+
+describe("resolveMaintainerRecapManifestOverride — config-as-code lookup (#2250)", () => {
+  it("returns the self-repo's configured maintainerRecap block when present", async () => {
+    const env = createTestEnv();
+    await upsertRepoFocusManifest(env, SELF_REPO, { maintainerRecap: { enabled: true, cadence: "daily", channel: "discord" } });
+
+    expect(await resolveMaintainerRecapManifestOverride(env)).toEqual({ present: true, enabled: true, cadence: "daily" });
+  });
+
+  it("returns present: false when the self-repo has no maintainerRecap block configured", async () => {
+    const env = createTestEnv();
+    await upsertRepoFocusManifest(env, SELF_REPO, { wantedPaths: ["src/"] });
+
+    expect(await resolveMaintainerRecapManifestOverride(env)).toEqual({ present: false, enabled: false, cadence: "weekly" });
+  });
+
+  it("degrades to present: false (never throws) when the manifest load itself fails", async () => {
+    const env = createTestEnv();
+    // loadRepoFocusManifest reads signal_snapshots (the persisted-record cache) before any live fetch fallback.
+    const realPrepare = env.DB.prepare.bind(env.DB);
+    env.DB.prepare = ((sql: string) => {
+      if (/"signal_snapshots"|signal_snapshots/i.test(sql)) throw new Error("poisoned query");
+      return realPrepare(sql);
+    }) as typeof env.DB.prepare;
+    vi.stubGlobal("fetch", async () => {
+      throw new Error("network down");
+    });
+    const warnings = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    expect(await resolveMaintainerRecapManifestOverride(env)).toEqual({ present: false, enabled: false, cadence: "weekly" });
+    expect(warnings.mock.calls.map((c) => String(c[0])).some((line) => line.includes("maintainer_recap_manifest_override_error"))).toBe(true);
   });
 });
 

@@ -468,15 +468,18 @@ describe("queue processors", () => {
 
   it("skips the maintainer recap job as a no-op when GITTENSORY_MAINTAINER_RECAP is OFF (default, #2248)", async () => {
     const env = createTestEnv({ DISCORD_WEBHOOK_URL: "https://discord.com/api/webhooks/123/abc" });
-    let fetchCalled = false;
-    vi.stubGlobal("fetch", async () => {
-      fetchCalled = true;
-      return new Response(null, { status: 204 });
+    let discordFetchCalled = false;
+    // The disabled-check ALSO resolves the self-repo's manifest override (#2250), which may fall through to a
+    // live GitHub fetch for its .gittensory.yml when uncached -- stub that fetch as a generic 404 so the
+    // manifest loader degrades to "no override", and only flag a call to the Discord webhook itself.
+    vi.stubGlobal("fetch", async (url: RequestInfo | URL) => {
+      if (String(url).includes("discord.com")) discordFetchCalled = true;
+      return new Response(null, { status: 404 });
     });
 
     await processJob(env, { type: "generate-maintainer-recap", requestedBy: "test" });
 
-    expect(fetchCalled).toBe(false);
+    expect(discordFetchCalled).toBe(false);
     const row = await env.DB.prepare("select count(*) as count from audit_events where event_type = ?").bind("maintainer_recap_notification.discord").first<{ count: number }>();
     expect(row?.count).toBe(0);
     vi.unstubAllGlobals();

@@ -39,6 +39,7 @@ import {
   overlayReviewConfig,
   parseReviewConfigMapping,
   reviewRecapConfigToJson,
+  maintainerRecapConfigToJson,
   settingsOverrideToJson,
   type FocusManifest,
   type FocusManifestContentLaneConfig,
@@ -47,6 +48,7 @@ import {
   type FocusManifestRepoDocGenerationConfig,
   type FocusManifestReviewConfig,
   type FocusManifestReviewRecapConfig,
+  type FocusManifestMaintainerRecapConfig,
   type FocusManifestSettings,
   type SelfHostAiModelConfig,
 } from "../../src/signals/focus-manifest";
@@ -451,6 +453,16 @@ describe(".gittensory.yml.example field-exhaustiveness (#1670)", () => {
   it.each(Object.entries(REVIEW_RECAP_FIELD_TOKENS))("documents reviewRecap.%s", (_field, token) => {
     expect(exampleContent).toContain(token);
   });
+
+  const MAINTAINER_RECAP_FIELD_TOKENS = {
+    enabled: "enabled:",
+    cadence: "cadence:",
+    channel: "channel:",
+  } satisfies Record<Exclude<keyof FocusManifestMaintainerRecapConfig, "present">, string>;
+
+  it.each(Object.entries(MAINTAINER_RECAP_FIELD_TOKENS))("documents maintainerRecap.%s", (_field, token) => {
+    expect(exampleContent).toContain(token);
+  });
 });
 
 describe("matchesManifestPath", () => {
@@ -820,6 +832,7 @@ describe("compileFocusManifestPolicy", () => {
       contentLane: { present: false, entryFileGlob: null, providerFileGlob: null, artifactGlob: null, collectionField: null, maxAppendedEntries: null, duplicateKeyFields: [], validatorId: null },
       repoDocGeneration: { present: false, enabled: false, scope: ["agents"], allowOverwriteExisting: false, refreshIntervalDays: 7 },
       reviewRecap: { present: false, enabled: false, cadenceDays: 7 },
+      maintainerRecap: { present: false, enabled: false, cadence: "weekly", channel: "discord" },
       warnings: [],
     });
     expect(policy.publicSafe.entryGuidance).toContain("Keep PRs focused.");
@@ -1798,6 +1811,74 @@ describe("parseFocusManifest gate config", () => {
 
     it("reviewRecapConfigToJson returns null for an absent config", () => {
       expect(reviewRecapConfigToJson(parseFocusManifest(null).reviewRecap)).toBeNull();
+    });
+  });
+
+  describe("maintainerRecap: (#1963, #2250, cross-repo digest cron config-as-code override)", () => {
+    it("defaults to fully disabled/absent when the key is omitted, and does not make the manifest present on its own", () => {
+      const m = parseFocusManifest({});
+      expect(m.maintainerRecap).toEqual({ present: false, enabled: false, cadence: "weekly", channel: "discord" });
+      expect(m.present).toBe(false);
+    });
+
+    it("treats an explicit null the same as an omitted key", () => {
+      expect(parseFocusManifest({ maintainerRecap: null }).maintainerRecap).toEqual({ present: false, enabled: false, cadence: "weekly", channel: "discord" });
+    });
+
+    it("warns and falls back to the default when the value is a non-mapping type (string or array)", () => {
+      const asString = parseFocusManifest({ maintainerRecap: "nope" as never });
+      expect(asString.maintainerRecap.present).toBe(false);
+      expect(asString.warnings.some((w) => /"maintainerRecap" must be a mapping/.test(w))).toBe(true);
+      const asArray = parseFocusManifest({ maintainerRecap: ["nope"] as never });
+      expect(asArray.maintainerRecap.present).toBe(false);
+      expect(asArray.warnings.some((w) => /"maintainerRecap" must be a mapping/.test(w))).toBe(true);
+    });
+
+    it("parses enabled: true and defaults cadence/channel, making the manifest present", () => {
+      const m = parseFocusManifest({ maintainerRecap: { enabled: true } });
+      expect(m.maintainerRecap).toEqual({ present: true, enabled: true, cadence: "weekly", channel: "discord" });
+      expect(m.present).toBe(true);
+    });
+
+    it("warns and defaults to false when enabled is a non-boolean value", () => {
+      const m = parseFocusManifest({ maintainerRecap: { enabled: "yes" as unknown as boolean } });
+      expect(m.maintainerRecap.enabled).toBe(false);
+      expect(m.warnings.some((w) => /maintainerRecap\.enabled/.test(w))).toBe(true);
+    });
+
+    it("parses a valid cadence and defaults to weekly when omitted", () => {
+      const m = parseFocusManifest({ maintainerRecap: { enabled: true, cadence: "daily" } });
+      expect(m.maintainerRecap.cadence).toBe("daily");
+      const defaulted = parseFocusManifest({ maintainerRecap: { enabled: true } });
+      expect(defaulted.maintainerRecap.cadence).toBe("weekly");
+    });
+
+    it("warns and falls back to weekly when cadence is not daily/weekly", () => {
+      const m = parseFocusManifest({ maintainerRecap: { enabled: true, cadence: "biweekly" as never } });
+      expect(m.maintainerRecap.cadence).toBe("weekly");
+      expect(m.warnings.some((w) => /maintainerRecap\.cadence/.test(w))).toBe(true);
+    });
+
+    it("parses a valid channel and defaults to discord when omitted", () => {
+      const m = parseFocusManifest({ maintainerRecap: { enabled: true, channel: "discord" } });
+      expect(m.maintainerRecap.channel).toBe("discord");
+      const defaulted = parseFocusManifest({ maintainerRecap: { enabled: true } });
+      expect(defaulted.maintainerRecap.channel).toBe("discord");
+    });
+
+    it("warns and falls back to discord when channel is not a supported value (e.g. slack, not yet delivered for this digest)", () => {
+      const m = parseFocusManifest({ maintainerRecap: { enabled: true, channel: "slack" as never } });
+      expect(m.maintainerRecap.channel).toBe("discord");
+      expect(m.warnings.some((w) => /maintainerRecap\.channel/.test(w))).toBe(true);
+    });
+
+    it("round-trips through maintainerRecapConfigToJson → parseFocusManifest unchanged", () => {
+      const m = parseFocusManifest({ maintainerRecap: { enabled: true, cadence: "daily", channel: "discord" } });
+      expect(parseFocusManifest({ maintainerRecap: maintainerRecapConfigToJson(m.maintainerRecap) }).maintainerRecap).toEqual(m.maintainerRecap);
+    });
+
+    it("maintainerRecapConfigToJson returns null for an absent config", () => {
+      expect(maintainerRecapConfigToJson(parseFocusManifest(null).maintainerRecap)).toBeNull();
     });
   });
 
