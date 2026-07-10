@@ -70,6 +70,8 @@ export class LinearAdapter implements ProjectTrackerAdapter {
     return projects.map((project) => ({ id: project.id, title: project.name }));
   }
 
+  // Linear's ProjectMilestone type has no open/completed status dimension (unlike Project.status.type), so
+  // "open" here means non-archived workspace milestones only.
   async listOpenMilestones(ctx: ProjectTrackerContext): Promise<ProjectTrackerRef[]> {
     const apiKey = await getDecryptedRepositoryLinearKey(ctx.env, ctx.repoFullName);
     if (!apiKey) return [];

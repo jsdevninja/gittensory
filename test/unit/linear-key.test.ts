@@ -300,6 +300,7 @@ describe("maintainer Linear workspace probe route (#3186)", () => {
   it("returns reachable counts when the stored key can list Linear projects and milestones", async () => {
     const app = createApp();
     const env = createTestEnv({ TOKEN_ENCRYPTION_SECRET: SECRET });
+    await seedRepo(env, "acme", "widgets", 4242);
     await upsertRepositoryLinearKey(env, { repoFullName: REPO, key: "lin_api_route-key-7777" });
     vi.stubGlobal("fetch", async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { query: string };
