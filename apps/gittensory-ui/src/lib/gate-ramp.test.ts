@@ -35,13 +35,15 @@ describe("gate-ramp helpers (#2218)", () => {
         qualityGateMode: "advisory",
       }),
     ).toBe(false);
-    expect(deriveGateRampPhase({
-      gateCheckMode: "enabled",
-      reviewCheckMode: "disabled",
-      linkedIssueGateMode: "advisory",
-      duplicatePrGateMode: "advisory",
-      qualityGateMode: "advisory",
-    })).toBe("inactive");
+    expect(
+      deriveGateRampPhase({
+        gateCheckMode: "enabled",
+        reviewCheckMode: "disabled",
+        linkedIssueGateMode: "advisory",
+        duplicatePrGateMode: "advisory",
+        qualityGateMode: "advisory",
+      }),
+    ).toBe("inactive");
   });
 
   it("detects advisory and blocking phases from the ramp trio", () => {

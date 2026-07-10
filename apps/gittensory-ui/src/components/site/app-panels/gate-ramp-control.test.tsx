@@ -101,7 +101,9 @@ describe("GateRampControl (#2218)", () => {
       ),
     );
 
-    const putCall = apiFetch.mock.calls.find(([, opts]) => (opts as { method?: string })?.method === "PUT");
+    const putCall = apiFetch.mock.calls.find(
+      ([, opts]) => (opts as { method?: string })?.method === "PUT",
+    );
     expect(putCall?.[0]).toContain("/v1/repos/acme/widgets/settings");
     const body = JSON.parse(String((putCall?.[1] as { body?: string })?.body ?? "{}"));
     expect(body.linkedIssueGateMode).toBe("block");
@@ -119,7 +121,9 @@ describe("GateRampControl (#2218)", () => {
     fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
 
     await waitFor(() => expect(screen.queryByText(/Enable blocking gate rules/i)).toBeNull());
-    expect(apiFetch.mock.calls.filter(([, opts]) => (opts as { method?: string })?.method === "PUT")).toHaveLength(0);
+    expect(
+      apiFetch.mock.calls.filter(([, opts]) => (opts as { method?: string })?.method === "PUT"),
+    ).toHaveLength(0);
   });
 
   it("toasts an error when the blocking ramp save fails", async () => {

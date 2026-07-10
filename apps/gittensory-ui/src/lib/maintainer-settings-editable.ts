@@ -34,7 +34,10 @@ export type MaintainerSettingsEditable = {
   publicQualityMetrics: boolean;
   commandAuthorization: {
     default?: Array<"maintainer" | "collaborator" | "pr_author" | "confirmed_miner">;
-    commands?: Record<string, Array<"maintainer" | "collaborator" | "pr_author" | "confirmed_miner">>;
+    commands?: Record<
+      string,
+      Array<"maintainer" | "collaborator" | "pr_author" | "confirmed_miner">
+    >;
   };
   autonomy: Partial<
     Record<
@@ -90,7 +93,5 @@ export function buildMaintainerSettingsSavePayload(
   patch: Partial<MaintainerSettingsEditable> = {},
 ): Record<string, unknown> {
   const merged = { ...settings, ...patch };
-  return Object.fromEntries(
-    MAINTAINER_SETTINGS_EDITABLE_KEYS.map((key) => [key, merged[key]]),
-  );
+  return Object.fromEntries(MAINTAINER_SETTINGS_EDITABLE_KEYS.map((key) => [key, merged[key]]));
 }

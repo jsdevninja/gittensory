@@ -8,7 +8,11 @@ import { StateBoundary } from "@/components/site/state-views";
 import { Switch } from "@/components/ui/switch";
 import { apiFetch } from "@/lib/api/request";
 import { getApiOrigin } from "@/lib/api/origin";
-import { buildBlockingRampPatch, summarizeGateRamp, type GateRampSettingsSlice } from "@/lib/gate-ramp";
+import {
+  buildBlockingRampPatch,
+  summarizeGateRamp,
+  type GateRampSettingsSlice,
+} from "@/lib/gate-ramp";
 import {
   buildMaintainerSettingsSavePayload,
   type MaintainerSettingsEditable,
@@ -132,12 +136,14 @@ export function GateRampControl({ reviewability }: { reviewability: Array<{ pr: 
             Gate ramp control
           </h2>
           <p className="mt-1 text-token-xs text-muted-foreground">
-            After advisory mode is on, ramp deterministic gate rules to blocking in one action — with
-            confirmation before merges can be held.
+            After advisory mode is on, ramp deterministic gate rules to blocking in one action —
+            with confirmation before merges can be held.
           </p>
         </div>
         {summary ? (
-          <StatusPill status={summary.isBlocking ? "blocked" : summary.phase === "advisory" ? "info" : "warn"}>
+          <StatusPill
+            status={summary.isBlocking ? "blocked" : summary.phase === "advisory" ? "info" : "warn"}
+          >
             {summary.label}
           </StatusPill>
         ) : null}
@@ -186,7 +192,7 @@ export function GateRampControl({ reviewability }: { reviewability: Array<{ pr: 
             <div className="space-y-4">
               <p className="text-token-sm text-foreground/90">{summary.description}</p>
 
-              <div className="flex flex-wrap items-center justify-between gap-4 rounded-token border border-border/60 bg-background/40 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-token border-hairline bg-background/40 px-4 py-3">
                 <div className="flex min-w-0 items-start gap-3">
                   <ShieldAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
                   <div>
@@ -203,7 +209,9 @@ export function GateRampControl({ reviewability }: { reviewability: Array<{ pr: 
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {busy ? <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden /> : null}
+                  {busy ? (
+                    <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />
+                  ) : null}
                   <Switch
                     id={switchId}
                     checked={switchChecked}
