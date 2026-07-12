@@ -1,6 +1,21 @@
+import type { ForgeConfig } from "./forge-config.js";
+
 export type FanoutTarget = {
   owner: string;
   repo: string;
+};
+
+/** Options shared by every fan-out entry point. `apiBaseUrl` is the legacy top-level forge-host override (it still
+ * wins over `forge.apiBaseUrl`); `forge` (#4784) carries the rest of the per-tenant forge knobs. */
+export type FanoutOptions = {
+  apiBaseUrl?: string;
+  forge?: Partial<ForgeConfig>;
+  concurrency?: number;
+  rateLimitLowWaterMark?: number;
+  rateLimitHighWaterMark?: number;
+  perPage?: number;
+  maxPages?: number;
+  sleepFn?: (ms: number) => Promise<unknown>;
 };
 
 export type RawCandidateIssue = {
@@ -42,51 +57,23 @@ export function mapWithConcurrency<T, R>(
 export function fetchCandidateIssuesWithSummary(
   targets: FanoutTarget[],
   githubToken: string,
-  options?: {
-    apiBaseUrl?: string;
-    concurrency?: number;
-    rateLimitLowWaterMark?: number;
-    rateLimitHighWaterMark?: number;
-    perPage?: number;
-    sleepFn?: (ms: number) => Promise<unknown>;
-  },
+  options?: FanoutOptions,
 ): Promise<CandidateIssueSummary>;
 
 export function fetchCandidateIssues(
   targets: FanoutTarget[],
   githubToken: string,
-  options?: {
-    apiBaseUrl?: string;
-    concurrency?: number;
-    rateLimitLowWaterMark?: number;
-    rateLimitHighWaterMark?: number;
-    perPage?: number;
-    sleepFn?: (ms: number) => Promise<unknown>;
-  },
+  options?: FanoutOptions,
 ): Promise<RawCandidateIssue[]>;
 
 export function searchCandidateIssuesWithSummary(
   searchQuery: string,
   githubToken: string,
-  options?: {
-    apiBaseUrl?: string;
-    concurrency?: number;
-    rateLimitLowWaterMark?: number;
-    rateLimitHighWaterMark?: number;
-    perPage?: number;
-    sleepFn?: (ms: number) => Promise<unknown>;
-  },
+  options?: FanoutOptions,
 ): Promise<CandidateIssueSummary>;
 
 export function searchCandidateIssues(
   searchQuery: string,
   githubToken: string,
-  options?: {
-    apiBaseUrl?: string;
-    concurrency?: number;
-    rateLimitLowWaterMark?: number;
-    rateLimitHighWaterMark?: number;
-    perPage?: number;
-    sleepFn?: (ms: number) => Promise<unknown>;
-  },
+  options?: FanoutOptions,
 ): Promise<RawCandidateIssue[]>;

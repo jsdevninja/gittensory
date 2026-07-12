@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { resolveAiPolicyVerdict } from "@jsonbored/gittensory-engine";
+import { resolveForgeConfig } from "./forge-config.js";
 import {
   DEFAULT_RATE_LIMIT_HIGH_WATER_MARK,
   DEFAULT_RATE_LIMIT_LOW_WATER_MARK,
@@ -7,7 +8,6 @@ import {
 } from "./discovery-throttle.js";
 import { fetchWithRetry } from "./http-retry.js";
 
-const defaultApiBaseUrl = "https://api.github.com";
 const defaultConcurrency = 5;
 // How long a parked worker waits before re-checking the live rate-limit-derived concurrency limit (#4844).
 const throttleParkMs = 25;
@@ -15,7 +15,6 @@ const defaultPerPage = 100;
 // Follow the GitHub Link header past the first page so a repo/search with >100 open issues isn't silently
 // truncated (#4831); cap the follow loop so a pathological Link chain can't run away.
 const defaultMaxPages = 10;
-const githubApiVersion = "2022-11-28";
 
 function normalizeLimit(value, fallback, min, max) {
   if (!Number.isFinite(value)) return fallback;
@@ -48,13 +47,21 @@ function targetFromFullName(fullName) {
   return { owner, repo, repoFullName: `${owner}/${repo}` };
 }
 
-function targetFromSearchIssue(issue) {
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Derive owner/repo from a search hit when `repository.full_name` is absent, using the tenant forge's own
+// `repoPathPrefix` for the API `repository_url` and a forge-agnostic host for the web `html_url` (#4784). Hardcoding
+// `/repos/` and `github.com` here dropped every custom-forge search result whose payload omitted `full_name`.
+function targetFromSearchIssue(issue, forge) {
   const repositoryFullName = targetFromFullName(issue?.repository?.full_name);
   if (repositoryFullName) return repositoryFullName;
 
+  const repoPathPrefix = escapeRegExp(forge.repoPathPrefix.replace(/\/+$/, ""));
   const repositoryUrl =
     typeof issue?.repository_url === "string"
-      ? issue.repository_url.match(/\/repos\/([^/?#]+)\/([^/?#]+)(?:[?#].*)?$/)
+      ? issue.repository_url.match(new RegExp(`${repoPathPrefix}/([^/?#]+)/([^/?#]+)(?:[?#].*)?$`))
       : null;
   if (repositoryUrl) {
     const owner = decodeURIComponent(repositoryUrl[1]);
@@ -64,7 +71,7 @@ function targetFromSearchIssue(issue) {
 
   const htmlUrl =
     typeof issue?.html_url === "string"
-      ? issue.html_url.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/issues\/\d+(?:[?#].*)?$/)
+      ? issue.html_url.match(/^https:\/\/[^/]+\/([^/]+)\/([^/]+)\/issues\/\d+(?:[?#].*)?$/)
       : null;
   if (htmlUrl) {
     const owner = decodeURIComponent(htmlUrl[1]);
@@ -75,11 +82,11 @@ function targetFromSearchIssue(issue) {
   return null;
 }
 
-function githubHeaders(githubToken) {
+function githubHeaders(githubToken, forge) {
   const headers = {
-    accept: "application/vnd.github+json",
-    "user-agent": "loopover-miner",
-    "x-github-api-version": githubApiVersion,
+    accept: forge.acceptHeader,
+    "user-agent": forge.userAgent,
+    [forge.apiVersionHeader]: forge.apiVersion,
   };
   const token = typeof githubToken === "string" ? githubToken.trim() : "";
   if (token) headers.authorization = `Bearer ${token}`;
@@ -90,8 +97,8 @@ function apiUrl(apiBaseUrl, path, query = "") {
   return `${apiBaseUrl.replace(/\/+$/, "")}${path}${query}`;
 }
 
-function repoPath(target, suffix) {
-  return `/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}${suffix}`;
+function repoPath(forge, target, suffix) {
+  return `${forge.repoPathPrefix}/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}${suffix}`;
 }
 
 function recordRateLimit(summary, response) {
@@ -118,7 +125,7 @@ async function githubGetJson(url, githubToken, summary, options) {
   const response = await fetchWithRetry(
     fetch,
     url,
-    { method: "GET", headers: githubHeaders(githubToken) },
+    { method: "GET", headers: githubHeaders(githubToken, options.forge) },
     { sleepFn: options?.sleepFn },
   );
   recordRateLimit(summary, response);
@@ -142,7 +149,7 @@ function warning(target, stage, message) {
 async function fetchRepoDoc(target, path, githubToken, options, summary, warnings) {
   const url = apiUrl(
     options.apiBaseUrl,
-    repoPath(target, `/contents/${encodeURIComponent(path)}`),
+    repoPath(options.forge, target, `/contents/${encodeURIComponent(path)}`),
   );
   try {
     const { response, payload } = await githubGetJson(url, githubToken, summary, options);
@@ -211,10 +218,10 @@ function normalizeIssue(target, issue, policySource) {
   };
 }
 
-function searchQueryWithIssueQualifiers(searchQuery) {
+function searchQueryWithIssueQualifiers(searchQuery, forge) {
   const trimmed = typeof searchQuery === "string" ? searchQuery.trim() : "";
   if (!trimmed) return "";
-  return `${trimmed} state:open type:issue`;
+  return `${trimmed} ${forge.searchQualifiers}`;
 }
 
 // The URL of the next page from a GitHub Link header (`<url>; rel="next"`), or null when this is the last page.
@@ -230,7 +237,7 @@ async function fetchTargetIssues(target, githubToken, options, summary, warnings
 
   let url = apiUrl(
     options.apiBaseUrl,
-    repoPath(target, "/issues"),
+    repoPath(options.forge, target, "/issues"),
     `?state=open&per_page=${options.perPage}`,
   );
   const issues = [];
@@ -261,12 +268,12 @@ async function fetchTargetIssues(target, githubToken, options, summary, warnings
 }
 
 async function fetchSearchIssues(searchQuery, githubToken, options, summary, warnings) {
-  const qualifiedQuery = searchQueryWithIssueQualifiers(searchQuery);
+  const qualifiedQuery = searchQueryWithIssueQualifiers(searchQuery, options.forge);
   if (!qualifiedQuery) return [];
 
   let url = apiUrl(
     options.apiBaseUrl,
-    "/search/issues",
+    options.forge.searchEndpoint,
     `?q=${encodeURIComponent(qualifiedQuery)}&per_page=${options.perPage}`,
   );
   const items = [];
@@ -352,11 +359,16 @@ function liveConcurrencyResolver(normalizedOptions, summary) {
 }
 
 function normalizeOptions(options = {}) {
+  // A legacy top-level `apiBaseUrl` (the pre-#4784 GitHub-Enterprise override every existing caller uses) still wins
+  // over `forge.apiBaseUrl`, so nothing that already passes `apiBaseUrl` changes behavior.
+  const apiBaseUrlOverride =
+    typeof options.apiBaseUrl === "string" && options.apiBaseUrl.trim()
+      ? { apiBaseUrl: options.apiBaseUrl }
+      : {};
+  const forge = resolveForgeConfig({ ...(options.forge ?? {}), ...apiBaseUrlOverride });
   return {
-    apiBaseUrl:
-      typeof options.apiBaseUrl === "string" && options.apiBaseUrl.trim()
-        ? options.apiBaseUrl.trim()
-        : defaultApiBaseUrl,
+    forge,
+    apiBaseUrl: forge.apiBaseUrl,
     concurrency: normalizeLimit(options.concurrency, defaultConcurrency, 1, 10),
     // Below/above these recorded-rate-limit-remaining marks the fanout serializes / runs at full concurrency; in
     // between it scales down linearly (#4844).
@@ -423,7 +435,7 @@ export async function searchCandidateIssuesWithSummary(searchQuery, githubToken,
   const targetsByKey = new Map();
   for (const item of searchItems) {
     if (!item || typeof item !== "object" || item.pull_request) continue;
-    const target = targetFromSearchIssue(item);
+    const target = targetFromSearchIssue(item, normalizedOptions.forge);
     if (target && !targetsByKey.has(targetKey(target))) targetsByKey.set(targetKey(target), target);
   }
 
@@ -440,7 +452,7 @@ export async function searchCandidateIssuesWithSummary(searchQuery, githubToken,
   const policiesByKey = new Map(policyEntries);
   const issues = [];
   for (const item of searchItems) {
-    const target = targetFromSearchIssue(item);
+    const target = targetFromSearchIssue(item, normalizedOptions.forge);
     if (!target) continue;
     const policy = policiesByKey.get(targetKey(target));
     if (!policy?.allowed) continue;
