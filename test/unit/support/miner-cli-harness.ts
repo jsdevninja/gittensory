@@ -190,7 +190,14 @@ export async function startForgeFixture(repos: ForgeFixtureRepo[] = []) {
       /^\/repos\/([^/]+)\/([^/]+)\/contents\/([^/]+)$/,
     );
     if (contentsMatch) {
-      const [, owner, repo, docName] = contentsMatch;
+      const owner = contentsMatch[1];
+      const repo = contentsMatch[2];
+      const docName = contentsMatch[3];
+      if (!owner || !repo || !docName) {
+        response.statusCode = 404;
+        response.end(JSON.stringify({ message: "Not Found" }));
+        return;
+      }
       const repoConfig = resolveForgeRepo(repos, owner, repo);
       response.setHeader("content-type", "application/json");
       if (docName === "AI-USAGE.md") {
@@ -212,7 +219,13 @@ export async function startForgeFixture(repos: ForgeFixtureRepo[] = []) {
 
     const issuesMatch = pathname.match(/^\/repos\/([^/]+)\/([^/]+)\/issues$/);
     if (issuesMatch) {
-      const [, owner, repo] = issuesMatch;
+      const owner = issuesMatch[1];
+      const repo = issuesMatch[2];
+      if (!owner || !repo) {
+        response.statusCode = 404;
+        response.end(JSON.stringify({ message: "Not Found" }));
+        return;
+      }
       const repoConfig = resolveForgeRepo(repos, owner, repo);
       response.setHeader("content-type", "application/json");
       response.setHeader("x-ratelimit-remaining", "4999");
