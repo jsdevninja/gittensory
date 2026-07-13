@@ -72,8 +72,10 @@ jobs:
               - 'apps/gittensory-ui/**'
               - 'apps/gittensory-miner-ui/**'
               - 'apps/gittensory-extension/**'
+              - 'apps/gittensory-miner-extension/**'
               - 'packages/gittensory-ui-kit/**'
               - 'scripts/build-extension.mjs'
+              - 'scripts/build-miner-extension.mjs'
               - 'package.json'
               - 'package-lock.json'
             # Backend changes that can drift the OpenAPI contract the UI type-checks against, but say
@@ -381,6 +383,12 @@ jobs:
       - name: UI tests
         if: ${{ github.event_name == 'push' || needs.changes.outputs.ui == 'true' }}
         run: npm run ui:test
+      - name: Extension lint
+        if: ${{ github.event_name == 'push' || needs.changes.outputs.ui == 'true' }}
+        run: npm run extension:lint && npm run miner-extension:lint
+      - name: Extension typecheck
+        if: ${{ github.event_name == 'push' || needs.changes.outputs.ui == 'true' }}
+        run: npm run extension:typecheck && npm run miner-extension:typecheck
       # `npm run ui:build` also regenerates apps/gittensory-ui/public/openapi.json (needed for a
       # standalone build), but this step's trigger condition is a strict subset of "OpenAPI drift
       # check" above (push || ui==true, vs. push || ui==true || uiContract==true), so whenever this
@@ -389,7 +397,7 @@ jobs:
       # steps directly instead of the aggregate script, skipping that redundant regen.
       - name: UI build
         if: ${{ github.event_name == 'push' || needs.changes.outputs.ui == 'true' }}
-        run: npm run extension:build && npm --workspace @jsonbored/gittensory-ui run build
+        run: npm run extension:build && npm run miner-extension:build && npm --workspace @jsonbored/gittensory-ui run build
 
   # The full-suite coverage run, sharded (#ci-shard-coverage). This alone was ~9-10 of the ~11 minutes a
   # typical backend PR spent in validate-code, because vitest schedules whole test FILES atomically to

@@ -24,7 +24,7 @@ const CLIENT_VISIBLE_PATHS = [
 const SUPPORTING_VISIBLE_PATHS = ["src/openapi/schemas.ts", "src/openapi/spec.ts"];
 
 const GENERATED_OPENAPI_PATHS = ["apps/gittensory-ui/public/openapi.json", "src/openapi/spec.ts"];
-const UI_ONLY_PREFIXES = ["apps/gittensory-ui/", "apps/gittensory-extension/"];
+const UI_ONLY_PREFIXES = ["apps/gittensory-ui/", "apps/gittensory-extension/", "apps/gittensory-miner-extension/"];
 const RELEASE_SCOPES = new Set(["release", "changelog"]);
 const EXCLUDED_SCOPES = new Set(["pwa", "ui", "extension", "github-agent", "sync", "upstream"]);
 const GROUP_ORDER = ["Features", "Fixes", "Security", "CI", "Build", "Docs", "Tests", "Refactors", "Dependencies", "Chores", "Reverts"];
