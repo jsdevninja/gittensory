@@ -4911,7 +4911,7 @@ async function buildRepoOutcomePatternsResponse(env: Env, fullName: string) {
   return attachDataQuality(response as unknown as Record<string, unknown>, dataQuality);
 }
 
-async function buildRegistrationReadinessResponse(env: Env, fullName: string) {
+export async function buildRegistrationReadinessResponse(env: Env, fullName: string) {
   /* v8 ignore start -- Registration readiness route-level shaping over covered signal helpers. */
   // Intentionally the raw DB `settings` alongside the raw (cache-only, never live-fetched) `focusManifest`,
   // not resolveRepositorySettings's merged view: this endpoint's whole purpose is to advise on the

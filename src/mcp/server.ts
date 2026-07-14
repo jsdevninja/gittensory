@@ -102,6 +102,7 @@ import { loadMaintainerNoiseReport, maintainerNoiseSummary } from "../services/m
 import { loadLabelAudit, labelAuditSummary } from "../services/label-audit";
 import { loadMaintainerLaneReport, maintainerLaneSummary } from "../services/maintainer-lane";
 import { buildRepoOnboardingPackPreviewForRepo } from "../services/repo-onboarding-pack";
+import { buildRegistrationReadinessResponse } from "../api/routes";
 import { loadGatePrecisionReport } from "../services/gate-precision";
 import { buildUnavailableQueueTrendReport } from "../services/queue-trends";
 import {
@@ -782,6 +783,28 @@ const repoOnboardingPackOutputSchema = {
   preview: z.unknown().optional(),
   policySource: z.string().optional(),
   error: z.string().optional(),
+};
+
+const registrationReadinessOutputSchema = {
+  repoFullName: z.string().optional(),
+  generatedAt: z.string().optional(),
+  ready: z.boolean().optional(),
+  recommendedRegistrationMode: z.string().optional(),
+  issuePolicy: z.string().optional(),
+  directPrReadiness: z.unknown().optional(),
+  issueDiscoveryReadiness: z.unknown().optional(),
+  labelPolicy: z.unknown().optional(),
+  maintainerCutReadiness: z.unknown().optional(),
+  testCoverageHealth: z.unknown().optional(),
+  queueHealth: z.unknown().optional(),
+  contributorIntakeHealth: z.unknown().optional(),
+  docsCompleteness: z.unknown().optional(),
+  githubApp: z.unknown().optional(),
+  policyReadiness: z.unknown().optional(),
+  onboardingPackPreview: z.unknown().optional(),
+  blockers: z.array(z.string()).optional(),
+  warnings: z.array(z.string()).optional(),
+  dataQuality: z.unknown().optional(),
 };
 
 const freshnessResponseOutputSchema = {
@@ -1635,6 +1658,17 @@ export class LoopoverMcp {
         outputSchema: repoOnboardingPackOutputSchema,
       },
       async (input) => this.toolResult(await this.getRepoOnboardingPack(input)),
+    );
+
+    server.registerTool(
+      "loopover_get_registration_readiness",
+      {
+        description:
+          "Preview-only registration-readiness report for a repository: what's missing/present before/after registering with LoopOver (direct-PR and issue-discovery lane readiness, label policy, maintainer-cut readiness, queue health, docs, and the GitHub App install state). Advisory only, not a registration action.",
+        inputSchema: ownerRepoShape,
+        outputSchema: registrationReadinessOutputSchema,
+      },
+      async (input) => this.toolResult(await this.getRegistrationReadiness(input)),
     );
 
     server.registerTool(
@@ -2727,6 +2761,18 @@ export class LoopoverMcp {
     return {
       summary: `LoopOver onboarding pack preview for ${fullName} (preview-only, not published).`,
       data: response as unknown as Record<string, unknown>,
+    };
+  }
+
+  private async getRegistrationReadiness(input: { owner: string; repo: string }): Promise<ToolPayload> {
+    const fullName = `${input.owner}/${input.repo}`;
+    await this.requireRepoAccess(fullName);
+    const report = await buildRegistrationReadinessResponse(this.env, fullName);
+    return {
+      summary: report.ready
+        ? `LoopOver registration readiness for ${fullName}: ready (preview-only, not a registration action).`
+        : `LoopOver registration readiness for ${fullName}: not ready — ${report.blockers.length} blocker(s) (preview-only, not a registration action).`,
+      data: report as unknown as Record<string, unknown>,
     };
   }
 
