@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildContentDuplicateReview,
+  contentSignalSourceFromDirectoryEntry,
   directoryIndexToSignals,
   extractContentDuplicateSignals,
   findContentDuplicateMatch,
@@ -836,5 +837,60 @@ describe("per-repo ContentRepoSpec override (a self-hosted curated list re-param
     const entries = [{ category: "tools", slug: "x", title: "X", githubUrl: "https://github.com/o/r" }];
     expect(directoryIndexToSignals(entries)[0]?.urls).toEqual(["https://github.com/o/r"]); // default url fields read githubUrl
     expect(directoryIndexToSignals(entries, {}, customSpec({ urlFields: new Set() }))[0]?.urls).toEqual([]); // custom empty set → none
+  });
+
+  // #5941 — before the fix, directory-index synthesis always emitted a hardcoded URL-field list, so a custom
+  // ContentRepoSpec.urlFields set never reached extractContentDuplicateSignals and corpus urls stayed [].
+  it("directoryIndexToSignals emits custom ContentRepoSpec urlFields into corpus urls (regression #5941)", () => {
+    const entries = [
+      {
+        category: "tools",
+        slug: "x",
+        title: "X",
+        description: "d",
+        myLink: "https://example.com/custom",
+        githubUrl: "https://github.com/o/r",
+      },
+    ];
+    const spec = customSpec({ urlFields: new Set(["myLink"]) });
+    const signals = directoryIndexToSignals(entries, {}, spec);
+    expect(signals[0]?.urls).toEqual(["https://example.com/custom"]);
+    expect(signals[0]?.urls).not.toContain("https://github.com/o/r");
+  });
+
+  it("default AWESOME_CLAUDE_CONTENT_SPEC still synthesizes the prior camelCase URL fields unchanged (#5941)", () => {
+    const entries = [
+      {
+        category: "skills",
+        slug: "foo",
+        title: "Foo",
+        description: "d",
+        githubUrl: "https://github.com/acme/foo",
+        websiteUrl: "https://acme.example",
+        myLink: "https://should-not-appear.example",
+      },
+    ];
+    const signals = directoryIndexToSignals(entries);
+    expect(signals[0]?.urls).toEqual(["https://github.com/acme/foo", "https://acme.example"]);
+    expect(signals[0]?.urls).not.toContain("https://should-not-appear.example");
+  });
+
+  it("contentSignalSourceFromDirectoryEntry defaults spec to AWESOME_CLAUDE_CONTENT_SPEC and skips empty URL values (#5941)", () => {
+    // One-arg call covers the default-parameter branch; empty-string githubUrl covers the falsy `if (value)` arm.
+    const synthesized = contentSignalSourceFromDirectoryEntry({
+      category: "skills",
+      slug: "foo",
+      title: "Foo",
+      description: "d",
+      githubUrl: "",
+      websiteUrl: "https://acme.example",
+    });
+    expect(synthesized).toContain('websiteUrl: "https://acme.example"');
+    expect(synthesized).not.toContain("githubUrl:");
+    const viaDefaultSpec = extractContentDuplicateSignals({
+      filePath: "content/skills/foo.mdx",
+      content: synthesized,
+    });
+    expect(viaDefaultSpec.urls).toEqual(["https://acme.example"]);
   });
 });

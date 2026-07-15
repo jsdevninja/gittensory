@@ -528,25 +528,22 @@ export type DirectoryIndexEntry = Record<string, unknown> & {
   canonicalUrl?: unknown;
 };
 
-/** URL signal fields read off a directory entry, in order. */
-const DIRECTORY_ENTRY_URL_SIGNAL_FIELDS = [
-  "documentationUrl",
-  "docsUrl",
-  "downloadUrl",
-  "githubUrl",
-  "packageUrl",
-  "repoUrl",
-  "repositoryUrl",
-  "sourceUrl",
-  "websiteUrl",
-] as const;
-
 function yamlScalar(value: unknown): string {
   return JSON.stringify(String(value || ""));
 }
 
-/** Synthesize the per-entry frontmatter block. */
-function contentSignalSourceFromDirectoryEntry(entry: DirectoryIndexEntry): string {
+/**
+ * Synthesize the per-entry frontmatter block for directory-index corpus extraction.
+ * URL lines come from `spec.urlFields` (not a hardcoded list) so they agree with
+ * `extractContentDuplicateSignals`'s filtering — custom ContentRepoSpec URL keys must
+ * reach the synthesized frontmatter or corpus `urls` stay silently empty (#5941).
+ *
+ * Exported for unit tests so the default-`spec` parameter branch is exercised (#5941 Codecov).
+ */
+export function contentSignalSourceFromDirectoryEntry(
+  entry: DirectoryIndexEntry,
+  spec: ContentRepoSpec = AWESOME_CLAUDE_CONTENT_SPEC,
+): string {
   const lines = [
     "---",
     `title: ${yamlScalar(entry.title)}`,
@@ -554,7 +551,7 @@ function contentSignalSourceFromDirectoryEntry(entry: DirectoryIndexEntry): stri
     `category: ${yamlScalar(entry.category)}`,
     `slug: ${yamlScalar(entry.slug)}`,
   ];
-  for (const field of DIRECTORY_ENTRY_URL_SIGNAL_FIELDS) {
+  for (const field of spec.urlFields) {
     const value = entry[field];
     if (value) lines.push(`${field}: ${yamlScalar(value)}`);
   }
@@ -588,7 +585,7 @@ export function directoryIndexToSignals(
       extractContentDuplicateSignals(
         {
           filePath,
-          content: contentSignalSourceFromDirectoryEntry(entry),
+          content: contentSignalSourceFromDirectoryEntry(entry, spec),
           label: `accepted entry ${filePath}`,
           url: String(entry.canonicalUrl || "") || `${siteUrl}/entry/${String(entry.category)}/${String(entry.slug)}`,
         },
