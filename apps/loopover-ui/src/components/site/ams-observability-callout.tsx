@@ -1,6 +1,6 @@
 import { Callout } from "@/components/site/primitives";
 
-// AMS (gittensory-miner) observability cross-reference (#5191). A dual-role self-hoster running both ORB (the
+// AMS (loopover-miner) observability cross-reference (#5191). A dual-role self-hoster running both ORB (the
 // review service) and AMS (the miner) on one box otherwise has no in-app pointer from the operations / quickstart /
 // workflow docs to the miner's observability setup. Keeping the callout — and its link target — in one place keeps
 // the wording byte-identical across all three routes instead of relying on three hand-copied copies staying in sync.
@@ -16,7 +16,7 @@ export const AMS_OBSERVABILITY_DOC_URL =
 export function AmsObservabilityCallout() {
   return (
     <Callout variant="note" title="Running the miner on this box too?">
-      If you also run <strong>AMS</strong> (the <code>gittensory-miner</code>) on this host, see{" "}
+      If you also run <strong>AMS</strong> (the <code>loopover-miner</code>) on this host, see{" "}
       <a href={AMS_OBSERVABILITY_DOC_URL} target="_blank" rel="noopener noreferrer">
         Observing your miner
       </a>{" "}

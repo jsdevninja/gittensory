@@ -59,5 +59,5 @@ export function operatorDashboardToCsvRows(data: AnalyticsLedgerCsvInput): strin
 
 export function exportOperatorDashboardCsv(data: AnalyticsLedgerCsvInput): void {
   const day = new Date().toISOString().slice(0, 10);
-  downloadCsvText(`gittensory-analytics-${day}.csv`, toCsv(operatorDashboardToCsvRows(data)));
+  downloadCsvText(`loopover-analytics-${day}.csv`, toCsv(operatorDashboardToCsvRows(data)));
 }

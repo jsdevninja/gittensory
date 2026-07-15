@@ -14,7 +14,7 @@ const DEFAULT_SCENES: TerminalScene[] = [
     output: "→ GitHub Device Flow opened… authorized as octocat",
   },
   {
-    prompt: "gittensory-mcp analyze-branch --login octocat --json",
+    prompt: "loopover-mcp analyze-branch --login octocat --json",
     output: `{
   "lane": "maintainer",
   "branch_blockers": ["unsquashed-commits", "missing-issue-link"],
@@ -27,7 +27,7 @@ const DEFAULT_SCENES: TerminalScene[] = [
 }`,
   },
   {
-    prompt: "gittensory-mcp agent plan --login octocat --json",
+    prompt: "loopover-mcp agent plan --login octocat --json",
     output: `{
   "plan": [
     { "action": "clean-open-prs",   "priority": 0.91 },
@@ -86,7 +86,7 @@ export function AnimatedTerminal({
   return (
     <div className={cn("rounded-token border border-border bg-background", className)}>
       <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
-        <span className="font-mono text-token-2xs text-muted-foreground">~ gittensory-mcp</span>
+        <span className="font-mono text-token-2xs text-muted-foreground">~ loopover-mcp</span>
         <div className="flex items-center gap-1.5">
           {scenes.map((_, i) => (
             <span

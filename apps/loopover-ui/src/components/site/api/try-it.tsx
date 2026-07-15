@@ -314,7 +314,7 @@ export function TryIt({ op, server }: { op: OpenApiOperation; server: string }) 
       {op.requiresAuth && !token && (
         <Callout variant="safety">
           <strong>No PATs.</strong> Signed-in browsers use the HttpOnly session cookie. Paste a
-          LoopOver token from <code>gittensory-mcp login</code> only for manual bearer testing.
+          LoopOver token from <code>loopover-mcp login</code> only for manual bearer testing.
         </Callout>
       )}
 

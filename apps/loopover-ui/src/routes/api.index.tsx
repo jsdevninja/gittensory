@@ -40,8 +40,8 @@ function ApiOverview() {
 
       <div className="mt-8 space-y-5">
         <Callout variant="safety">
-          <strong>Auth.</strong> Use a LoopOver session token from <code>gittensory-mcp login</code>
-          . Never paste a GitHub PAT. Tokens you use in this reference live only in{" "}
+          <strong>Auth.</strong> Use a LoopOver session token from <code>loopover-mcp login</code>.
+          Never paste a GitHub PAT. Tokens you use in this reference live only in{" "}
           <code>localStorage</code> on this device and can be cleared instantly.
         </Callout>
 

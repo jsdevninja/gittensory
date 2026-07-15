@@ -124,7 +124,7 @@ function MinersPage() {
               backed by your GitHub identity.
             </p>
             <div className="mt-4">
-              <CodeBlock code={`gittensory-mcp login\ngittensory-mcp whoami`} />
+              <CodeBlock code={`loopover-mcp login\nloopover-mcp whoami`} />
             </div>
           </Card>
           <Card>
@@ -134,7 +134,7 @@ function MinersPage() {
               Lane fit, repo targets, freshness, and the ranked next actions that move you forward.
             </p>
             <div className="mt-4">
-              <CodeBlock code={`gittensory-mcp agent plan --login your-login --json`} />
+              <CodeBlock code={`loopover-mcp agent plan --login your-login --json`} />
             </div>
           </Card>
           <Card>
@@ -146,7 +146,7 @@ function MinersPage() {
             </p>
             <div className="mt-4">
               <CodeBlock
-                code={`gittensory-mcp analyze-branch --login your-login --json\ngittensory-mcp preflight --login your-login --json`}
+                code={`loopover-mcp analyze-branch --login your-login --json\nloopover-mcp preflight --login your-login --json`}
               />
             </div>
           </Card>
@@ -158,7 +158,7 @@ function MinersPage() {
               Private signals stay local.
             </p>
             <div className="mt-4">
-              <CodeBlock code={`gittensory-mcp agent packet --json`} />
+              <CodeBlock code={`loopover-mcp agent packet --json`} />
             </div>
           </Card>
         </div>

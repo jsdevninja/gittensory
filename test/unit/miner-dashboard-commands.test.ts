@@ -20,7 +20,7 @@ describe("miner dashboard command actions", () => {
       true,
     );
     expect(commands.find((command) => command.id === "plan")).toMatchObject({
-      command: "gittensory-mcp agent plan --login JSONbored --json",
+      command: "loopover-mcp agent plan --login JSONbored --json",
       state: "ready",
       copyable: true,
     });
@@ -28,13 +28,13 @@ describe("miner dashboard command actions", () => {
       commands.find((command) => command.id === "preflight"),
     ).toMatchObject({
       command:
-        "gittensory-mcp preflight --login JSONbored --repo JSONbored/gittensory --base origin/main --json",
+        "loopover-mcp preflight --login JSONbored --repo JSONbored/gittensory --base origin/main --json",
       state: "ready",
       copyable: true,
     });
     expect(commands.find((command) => command.id === "packet")).toMatchObject({
       command:
-        "gittensory-mcp agent packet --login JSONbored --repo JSONbored/gittensory --base origin/main --json",
+        "loopover-mcp agent packet --login JSONbored --repo JSONbored/gittensory --base origin/main --json",
       state: "ready",
       copyable: true,
     });
@@ -73,7 +73,7 @@ describe("miner dashboard command actions", () => {
     const serialized = JSON.stringify(commands);
 
     expect(commands.find((command) => command.id === "plan")).toMatchObject({
-      command: "gittensory-mcp agent plan --login your-login --json",
+      command: "loopover-mcp agent plan --login your-login --json",
       copyable: false,
       state: "needs_login",
     });
@@ -98,7 +98,7 @@ describe("miner dashboard command actions", () => {
     const preflight = commands.find((command) => command.id === "preflight");
     expect(preflight).toMatchObject({
       command:
-        "gittensory-mcp preflight --login trust-score --repo metamask/wallet-adapter --base origin/main --json",
+        "loopover-mcp preflight --login trust-score --repo metamask/wallet-adapter --base origin/main --json",
       copyable: true,
       state: "ready",
     });
@@ -106,6 +106,6 @@ describe("miner dashboard command actions", () => {
     expect(preflight?.command).not.toContain("[redacted]");
 
     const plan = commands.find((command) => command.id === "plan");
-    expect(plan).toMatchObject({ command: "gittensory-mcp agent plan --login trust-score --json", copyable: true });
+    expect(plan).toMatchObject({ command: "loopover-mcp agent plan --login trust-score --json", copyable: true });
   });
 });

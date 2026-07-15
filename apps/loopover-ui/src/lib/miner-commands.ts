@@ -33,7 +33,7 @@ export function buildMinerCommandActions(input: {
     {
       id: "status",
       label: "Status",
-      command: "gittensory-mcp status --json",
+      command: "loopover-mcp status --json",
       state: "ready",
       copyable: true,
       boundary: "local-mcp",
@@ -41,7 +41,7 @@ export function buildMinerCommandActions(input: {
     {
       id: "doctor",
       label: "Doctor",
-      command: "gittensory-mcp doctor --json",
+      command: "loopover-mcp doctor --json",
       state: "ready",
       copyable: true,
       boundary: "local-mcp",
@@ -49,7 +49,7 @@ export function buildMinerCommandActions(input: {
     {
       id: "plan",
       label: "Plan",
-      command: `gittensory-mcp agent plan --login ${login} --json`,
+      command: `loopover-mcp agent plan --login ${login} --json`,
       state: hasLogin ? "ready" : "needs_login",
       copyable: hasLogin,
       boundary: "local-mcp",
@@ -57,7 +57,7 @@ export function buildMinerCommandActions(input: {
     {
       id: "preflight",
       label: "Preflight",
-      command: `gittensory-mcp preflight --login ${login} --repo ${repoFullName} --base origin/main --json`,
+      command: `loopover-mcp preflight --login ${login} --repo ${repoFullName} --base origin/main --json`,
       state: hasLogin && hasRepo ? "ready" : hasLogin ? "needs_repo" : "needs_login",
       copyable: hasLogin && hasRepo,
       boundary: "local-mcp",
@@ -65,7 +65,7 @@ export function buildMinerCommandActions(input: {
     {
       id: "packet",
       label: "Packet",
-      command: `gittensory-mcp agent packet --login ${login} --repo ${repoFullName} --base origin/main --json`,
+      command: `loopover-mcp agent packet --login ${login} --repo ${repoFullName} --base origin/main --json`,
       state: hasLogin && hasRepo ? "ready" : hasLogin ? "needs_repo" : "needs_login",
       copyable: hasLogin && hasRepo,
       boundary: "local-mcp",

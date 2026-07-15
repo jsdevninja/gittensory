@@ -379,8 +379,8 @@ function Install() {
           </div>
           <NpmInstall className="mt-3" />
           <pre className="mt-3 overflow-x-auto rounded-token border-hairline bg-background p-3 font-mono text-token-xs leading-token-relaxed text-foreground/90">
-            {`gittensory-mcp login
-gittensory-mcp analyze-branch --login your-login --json`}
+            {`loopover-mcp login
+loopover-mcp analyze-branch --login your-login --json`}
           </pre>
         </div>
         <div className="rounded-token border-hairline bg-card/40 p-4">
@@ -457,8 +457,8 @@ const CLIENT_TABS: Array<{
     filename: "terminal",
     lang: "bash",
     snippet: `npm i -g @loopover/mcp@latest
-gittensory-mcp login
-gittensory-mcp analyze-branch --login your-login --json`,
+loopover-mcp login
+loopover-mcp analyze-branch --login your-login --json`,
   },
   {
     id: "codex",
@@ -466,7 +466,7 @@ gittensory-mcp analyze-branch --login your-login --json`,
     audience: "Agents",
     filename: "~/.codex/config.toml",
     lang: "toml",
-    snippet: `[mcp_servers.gittensory]
+    snippet: `[mcp_servers.loopover]
 command = "npx"
 args = ["-y", "@loopover/mcp@latest", "--stdio"]`,
   },
@@ -478,7 +478,7 @@ args = ["-y", "@loopover/mcp@latest", "--stdio"]`,
     lang: "json",
     snippet: `{
   "mcpServers": {
-    "gittensory": {
+    "loopover": {
       "command": "npx",
       "args": ["-y", "@loopover/mcp@latest", "--stdio"]
     }
@@ -493,7 +493,7 @@ args = ["-y", "@loopover/mcp@latest", "--stdio"]`,
     lang: "json",
     snippet: `{
   "mcpServers": {
-    "gittensory": {
+    "loopover": {
       "command": "npx",
       "args": ["-y", "@loopover/mcp@latest", "--stdio"]
     }

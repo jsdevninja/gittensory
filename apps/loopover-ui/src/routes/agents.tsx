@@ -67,7 +67,7 @@ function AgentsPage() {
               Run the MCP as a local stdio process, or connect to the remote MCP at the Worker.
             </p>
             <div className="mt-4">
-              <CodeBlock code={`gittensory-mcp --stdio`} />
+              <CodeBlock code={`loopover-mcp --stdio`} />
               <div className="mt-2">
                 <CodeBlock code={`npx -y @loopover/mcp@latest --stdio`} />
               </div>
@@ -103,11 +103,11 @@ function AgentsPage() {
             </p>
             <div className="mt-4">
               <CodeBlock
-                code={`gittensory-mcp doctor
-gittensory-mcp status
-gittensory-mcp init-client --print codex
-gittensory-mcp init-client --print claude
-gittensory-mcp init-client --print cursor`}
+                code={`loopover-mcp doctor
+loopover-mcp status
+loopover-mcp init-client --print codex
+loopover-mcp init-client --print claude
+loopover-mcp init-client --print cursor`}
               />
             </div>
           </Card>

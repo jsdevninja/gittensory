@@ -425,7 +425,7 @@ function RecentActivity({ runs }: { runs: RecentRun[] }) {
 
 const ONBOARDING_STEPS = [
   { id: "install", label: "Install the MCP package" },
-  { id: "doctor", label: "Run gittensory-mcp doctor" },
+  { id: "doctor", label: "Run loopover-mcp doctor" },
   { id: "workbench", label: "Explore the Workbench tabs" },
   { id: "run", label: "Open an agent run" },
 ] as const;
