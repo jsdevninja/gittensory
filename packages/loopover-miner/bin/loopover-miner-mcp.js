@@ -20,6 +20,9 @@ import { collectStatus, runDoctorChecks } from "../lib/status.js";
 import { buildCalibrationReport } from "../lib/calibration.js";
 import { toOutcomeRecords, toPredictionRecords } from "../lib/calibration-cli.js";
 import { initPredictionLedger } from "../lib/prediction-ledger.js";
+import { loadMinerFileSecrets } from "../lib/env-file-indirection.js";
+import { installCliSignalHandlers } from "../lib/process-lifecycle.js";
+import { captureMinerError, initMinerSentry } from "../lib/sentry.js";
 
 // MCP stdio server for @loopover/miner (scaffold #5153). Mirrors the packages/loopover-mcp
 // harness (MCP SDK server + stdio transport). Tools:
@@ -342,10 +345,23 @@ export function createMinerMcpServer(options = {}) {
 // realpathSync on both sides resolves the npm bin symlink so a global/npx install still matches.
 const invokedPath = process.argv[1] ? realpathSync(process.argv[1]) : "";
 if (invokedPath && invokedPath === realpathSync(fileURLToPath(import.meta.url))) {
+  // Previously this bin had NO crash safety net beyond the startup .catch() below -- an exception thrown while
+  // handling an MCP tool call, after the server was already connected, had nowhere to go (#6011). Wire in the
+  // same opt-in Sentry + signal/crash handling loopover-miner.js already gets, sharing process-lifecycle.js.
+  try {
+    loadMinerFileSecrets();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+  await initMinerSentry(process.env);
+  installCliSignalHandlers({ captureError: captureMinerError });
+
   createMinerMcpServer()
     .connect(new StdioServerTransport())
     .catch((error) => {
       console.error(error);
+      captureMinerError(error, { kind: "mcp_startup_connect_failed" });
       process.exit(1);
     });
 }

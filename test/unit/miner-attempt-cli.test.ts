@@ -16,6 +16,7 @@ import { closeDefaultWorktreeAllocator, openWorktreeAllocator } from "../../pack
 import { closeDefaultPortfolioQueueStore } from "../../packages/loopover-miner/lib/portfolio-queue.js";
 import { closeDefaultGovernorState } from "../../packages/loopover-miner/lib/governor-state.js";
 import { buildAttemptDeps, parseAttemptArgs, runAttempt } from "../../packages/loopover-miner/lib/attempt-cli.js";
+import * as minerSentryModule from "../../packages/loopover-miner/lib/sentry.js";
 import type { PrepareAttemptWorktreeResult } from "../../packages/loopover-miner/lib/attempt-worktree.js";
 import { DEFAULT_AMS_POLICY_SPEC, DEFAULT_MINER_GOAL_SPEC, parseFocusManifest } from "../../packages/loopover-engine/src/index";
 
@@ -423,6 +424,42 @@ describe("runAttempt (#5132)", () => {
     });
   });
 
+  it("REGRESSION (#6011): an attempt_outcome_summary ledger-append failure never fails an otherwise-successful attempt, but is captured instead of silently swallowed", async () => {
+    const { allocator, claimLedger, eventLedger, attemptLog, governorLedger } = tempLedgers();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const realAppend = attemptLog.appendAttemptLogEvent.bind(attemptLog);
+    vi.spyOn(attemptLog, "appendAttemptLogEvent").mockImplementation((event) => {
+      if (event.eventType === "attempt_outcome_summary") throw new Error("ledger full");
+      return realAppend(event);
+    });
+    const runMinerAttemptSpy = vi.fn().mockResolvedValue({
+      outcome: "submitted",
+      spec: { command: "gh pr create", cwd: "/fake", timeoutMs: 1000 },
+      execResult: { code: 0, stdout: "https://github.com/acme/widgets/pull/9\n" },
+      loopResult: fakeLoopResult({ handoffPacket: { changedFiles: [{ path: "src/a.ts" }] } }),
+    });
+    const captureSpy = vi.spyOn(minerSentryModule, "captureMinerError");
+
+    const exitCode = await runAttempt(["acme/widgets", "7", "--miner-login", "alice", "--json"], {
+      env: { MINER_CODING_AGENT_PROVIDER: "noop" },
+      openWorktreeAllocator: () => allocator,
+      openClaimLedger: () => claimLedger,
+      initEventLedger: () => eventLedger,
+      initAttemptLog: () => attemptLog,
+      initGovernorLedger: () => governorLedger,
+      ...readyPipelineOptions({ runMinerAttempt: runMinerAttemptSpy }),
+    });
+
+    expect(exitCode).toBe(0);
+    // Per docs/observability.md this row feeds the Grafana per-provider cost/usage dashboard -- a failure here
+    // used to silently drop the attempt from operator-facing metrics with nobody told.
+    expect(captureSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "ledger full" }),
+      expect.objectContaining({ kind: "attempt_outcome_summary_append_failed" }),
+    );
+    captureSpy.mockRestore();
+  });
+
   it("REGRESSION (#5655 follow-up): a real submitted outcome with a real changed-files set records real own-submission history, closing the gap that left resolveOwnRejectionHistory silently a no-op", async () => {
     const { allocator, claimLedger, eventLedger, attemptLog, governorLedger } = tempLedgers();
     vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -551,6 +588,7 @@ describe("runAttempt (#5132)", () => {
       loopResult: fakeLoopResult({ handoffPacket: { changedFiles: [{ path: "src/a.ts" }] } }),
     });
 
+    const captureSpy = vi.spyOn(minerSentryModule, "captureMinerError");
     const exitCode = await runAttempt(["acme/widgets", "7", "--miner-login", "alice", "--json"], {
       env: { MINER_CODING_AGENT_PROVIDER: "noop" },
       openWorktreeAllocator: () => allocator,
@@ -563,6 +601,14 @@ describe("runAttempt (#5132)", () => {
 
     expect(exitCode).toBe(0);
     expect(recordOwnSubmissionSpy).toHaveBeenCalled();
+    // REGRESSION (#6011): the swallow above is deliberate and unchanged, but was previously silent -- if this
+    // write fails AFTER a real PR has already opened, future self-plagiarism checks go permanently blind to
+    // this exact submission with nobody told.
+    expect(captureSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "disk full" }),
+      expect.objectContaining({ kind: "record_own_submission_failed" }),
+    );
+    captureSpy.mockRestore();
   });
 
   it("does not record own-submission history on a non-submitted outcome", async () => {
@@ -1529,6 +1575,7 @@ describe("runAttempt: real claim-ledger wiring (#5393)", () => {
       return { outcome: "abandon", loopResult: fakeLoopResult() };
     });
 
+    const captureSpy = vi.spyOn(minerSentryModule, "captureMinerError");
     const exitCode = await runAttempt(["acme/widgets", "7", "--miner-login", "alice", "--json"], {
       env: { MINER_CODING_AGENT_PROVIDER: "noop" },
       openWorktreeAllocator: () => allocator,
@@ -1545,5 +1592,12 @@ describe("runAttempt: real claim-ledger wiring (#5393)", () => {
 
     expect(exitCode).toBe(7);
     expect(recordTransitionSpy).toHaveBeenCalledTimes(1);
+    // REGRESSION (#6011): "never crashes" above is deliberate and unchanged, but was previously silent -- a
+    // kill-switch flip mid-attempt (a compliance-relevant event) could vanish with no record.
+    expect(captureSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "ledger unavailable" }),
+      expect.objectContaining({ kind: "kill_switch_transition_record_failed" }),
+    );
+    captureSpy.mockRestore();
   });
 });

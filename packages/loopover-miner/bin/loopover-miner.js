@@ -18,6 +18,7 @@ import { runPurge } from "../lib/purge-cli.js";
 import { runQueueCli } from "../lib/portfolio-queue-cli.js";
 import { runOrbExportCli } from "../lib/orb-export.js";
 import { installCliSignalHandlers } from "../lib/process-lifecycle.js";
+import { captureMinerError, initMinerSentry } from "../lib/sentry.js";
 import { runStateCli } from "../lib/run-state-cli.js";
 import { runInit } from "../lib/laptop-init.js";
 import { createWizardIo, runInteractiveInit } from "../lib/init-wizard.js";
@@ -43,9 +44,14 @@ try {
   process.exit(1);
 }
 
+// Opt-in Sentry (#6011): a complete no-op unless the operator sets LOOPOVER_MINER_SENTRY_DSN themselves. Must
+// run AFTER loadMinerFileSecrets (so a `_FILE`-mounted DSN resolves first) and BEFORE installCliSignalHandlers
+// (so a startup crash is still captured).
+await initMinerSentry(process.env);
+
 // Register signal + crash handlers once, before any command runs, so an interrupted run closes its open ledgers
 // cleanly instead of dying mid-write (#4826). Covers every subcommand below, including the local ones.
-installCliSignalHandlers();
+installCliSignalHandlers({ captureError: captureMinerError });
 
 // Peel the global logging flags (--quiet/--verbose/--log-level) off the front of argv and configure the
 // process-wide logger once (#4835), so every command below shares one level-aware logger without re-parsing

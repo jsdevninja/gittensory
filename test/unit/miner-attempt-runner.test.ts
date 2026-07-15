@@ -9,6 +9,7 @@ vi.mock("@loopover/engine", async () => {
 
 import { runMinerAttempt } from "../../packages/loopover-miner/lib/attempt-runner.js";
 import { initEventLedger } from "../../packages/loopover-miner/lib/event-ledger.js";
+import * as minerSentryModule from "../../packages/loopover-miner/lib/sentry.js";
 import { initGovernorLedger } from "../../packages/loopover-miner/lib/governor-ledger.js";
 import {
   closeDefaultGovernorState,
@@ -406,8 +407,16 @@ describe("runMinerAttempt — real self-plagiarism wiring into the chokepoint (#
     throwingState.listRecentOwnSubmissions = () => {
       throw new Error("db locked");
     };
+    const captureSpy = vi.spyOn(minerSentryModule, "captureMinerError");
     const result = await runMinerAttempt(baseAttemptInput(), baseDeps({ governorState: throwingState }));
     expect(result.outcome).toBe("submitted");
+    // REGRESSION (#6011): the fail-open above is deliberate and unchanged, but was previously silent -- a
+    // broken governor-state store used to disable the self-plagiarism check with zero trace anywhere.
+    expect(captureSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "db locked" }),
+      expect.objectContaining({ kind: "self_plagiarism_history_read_failed" }),
+    );
+    captureSpy.mockRestore();
   });
 
   it("reads the real default governor-state store when no governorState dep is supplied (production path)", async () => {

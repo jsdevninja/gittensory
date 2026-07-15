@@ -182,6 +182,30 @@ describe("loopover-miner process lifecycle / crash-safety (#4826)", () => {
     expect(exit).toHaveBeenCalledWith(1);
   });
 
+  it("REGRESSION (#6011): calls the injected captureError for uncaughtException/unhandledRejection but NOT for a clean SIGINT/SIGTERM exit", () => {
+    const { proc, handlers } = makeFakeProcess();
+    const captureError = vi.fn();
+    installCliSignalHandlers({ process: proc, log: vi.fn(), exit: vi.fn(), captureError });
+
+    const error = new Error("kaboom");
+    handlers.get("uncaughtException")?.(error);
+    expect(captureError).toHaveBeenCalledWith(error, { kind: "uncaughtException" });
+
+    handlers.get("unhandledRejection")?.("plain reason");
+    expect(captureError).toHaveBeenCalledWith("plain reason", { kind: "unhandledRejection" });
+
+    captureError.mockClear();
+    handlers.get("SIGINT")?.();
+    handlers.get("SIGTERM")?.();
+    expect(captureError).not.toHaveBeenCalled(); // a clean signal exit is not an error
+  });
+
+  it("defaults captureError to a no-op when none is injected, matching every pre-existing caller", () => {
+    const { proc, handlers } = makeFakeProcess();
+    installCliSignalHandlers({ process: proc, log: vi.fn(), exit: vi.fn() });
+    expect(() => handlers.get("uncaughtException")?.(new Error("no capture hook"))).not.toThrow();
+  });
+
   it("reports a cleanup failure that happens during signal handling via the log", () => {
     const { proc, handlers } = makeFakeProcess();
     const log = vi.fn();

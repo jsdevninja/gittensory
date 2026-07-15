@@ -33,6 +33,7 @@ import { fetchSelfReviewContext } from "./self-review-context.js";
 import { buildCodingTaskSpec } from "./coding-task-spec.js";
 import { resolveAmsPolicy } from "./ams-policy.js";
 import { checkMinerKillSwitch, recordMinerKillSwitchTransition } from "./governor-kill-switch.js";
+import { captureMinerError } from "./sentry.js";
 import { buildAttemptGovernorContext, buildAttemptLoopInput } from "./attempt-input-builder.js";
 import { getAttemptHistory } from "./portfolio-queue.js";
 import { loadReputationHistory, recordOwnSubmission } from "./governor-state.js";
@@ -404,8 +405,10 @@ export async function runAttempt(args, options = {}) {
             previousScope: previousKillSwitchScope,
             scope: live.scope,
           });
-        } catch {
-          // Ledger append must never crash an aborting attempt.
+        } catch (error) {
+          // Ledger append must never crash an aborting attempt (kept), but was previously silent -- a
+          // kill-switch flip mid-attempt (a compliance-relevant event) could vanish with no record (#6011).
+          captureMinerError(error, { kind: "kill_switch_transition_record_failed", repoFullName: parsed.repoFullName, scope: live.scope });
         }
         previousKillSwitchScope = live.scope;
       }
@@ -518,8 +521,11 @@ export async function runAttempt(args, options = {}) {
             pullRequestNumber: selfPrNumber,
             issueNumber: parsed.issueNumber,
           });
-        } catch {
-          // Deliberately swallowed -- see comment above.
+        } catch (error) {
+          // A logging failure must never fail an otherwise-successful attempt (kept), but was previously
+          // silent -- if this write fails AFTER a real PR has already opened, future self-plagiarism checks go
+          // permanently blind to this exact submission with nobody told (#6011).
+          captureMinerError(error, { kind: "record_own_submission_failed", repoFullName: parsed.repoFullName, pullRequestNumber: selfPrNumber });
         }
       }
     }
@@ -578,8 +584,11 @@ export async function runAttempt(args, options = {}) {
         costUsd: finalResult.totalCostUsd,
         tokensUsed: finalResult.totalTokensUsed,
       });
-    } catch {
-      // Deliberately swallowed -- see comment above.
+    } catch (error) {
+      // A logging failure must never fail an otherwise-successful attempt (kept), but was previously silent --
+      // per docs/observability.md this row feeds the Grafana per-provider cost/usage dashboard, so a failure
+      // here silently drops the attempt from operator-facing metrics with nobody told (#6011).
+      captureMinerError(error, { kind: "attempt_outcome_summary_append_failed", attemptId, repoFullName: parsed.repoFullName });
     }
 
     if (parsed.json) {

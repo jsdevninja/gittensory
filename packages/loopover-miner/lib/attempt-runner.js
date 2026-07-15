@@ -4,6 +4,7 @@ import { checkSubmissionFreshness } from "./submission-freshness-check.js";
 import { evaluateGovernorChokepointGatePersisted } from "./governor-chokepoint-persisted.js";
 import { listRecentOwnSubmissions } from "./governor-state.js";
 import { prepareOpenPrSubmission } from "./harness-submission-trigger.js";
+import { captureMinerError } from "./sentry.js";
 
 // The real driving-loop entrypoint (#2337): the missing link between #2333's iterate-loop orchestrator and an
 // actual, executed open_pr write. Composes, in order: runIterateLoop (create -> score -> self-review -> decide,
@@ -190,7 +191,10 @@ export async function runMinerAttempt(input, deps) {
     selfPlagiarismRecentSubmissions = deps.governorState
       ? deps.governorState.listRecentOwnSubmissions({ repoFullName: input.loopInput.repoFullName })
       : listRecentOwnSubmissions({ repoFullName: input.loopInput.repoFullName });
-  } catch {
+  } catch (error) {
+    // Fail-open is deliberate (see the comment above) -- this only makes the fallback VISIBLE. A broken
+    // governor-state store silently disabling the self-plagiarism safety check had zero trace anywhere (#6011).
+    captureMinerError(error, { kind: "self_plagiarism_history_read_failed", repoFullName: input.loopInput.repoFullName });
     selfPlagiarismRecentSubmissions = [];
   }
 

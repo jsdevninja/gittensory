@@ -66,6 +66,10 @@ export function installCliSignalHandlers(options = {}) {
   const proc = options.process ?? process;
   const log = typeof options.log === "function" ? options.log : (message) => console.error(message);
   const exit = typeof options.exit === "function" ? options.exit : (code) => proc.exit(code);
+  // Optional Sentry (or any) capture hook -- decoupled from a specific implementation so this module stays
+  // fully unit-testable without mocking Sentry (#6011). No-op default matches this module's pre-existing
+  // behavior for every caller that doesn't pass one.
+  const captureError = typeof options.captureError === "function" ? options.captureError : () => {};
 
   if (handlersInstalled && options.force !== true) return false;
   handlersInstalled = true;
@@ -86,12 +90,14 @@ export function installCliSignalHandlers(options = {}) {
 
   proc.on("uncaughtException", (error) => {
     log(`loopover-miner: uncaught exception: ${describeError(error)}`);
+    captureError(error, { kind: "uncaughtException" });
     runCleanup();
     exit(1);
   });
 
   proc.on("unhandledRejection", (reason) => {
     log(`loopover-miner: unhandled promise rejection: ${describeError(reason)}`);
+    captureError(reason, { kind: "unhandledRejection" });
     runCleanup();
     exit(1);
   });

@@ -14,6 +14,10 @@ export type InstallCliSignalHandlersOptions = {
   process?: ProcessLike;
   log?: (message: string) => void;
   exit?: (code: number) => void;
+  /** Called (in addition to `log`) for uncaughtException/unhandledRejection specifically -- not the clean
+   *  SIGINT/SIGTERM exits, which are not errors. No-op default; wire in captureMinerError (lib/sentry.js) to
+   *  report crashes. Never expected to throw. */
+  captureError?: (error: unknown, context?: Record<string, unknown>) => void;
   /** Reinstall even if handlers were already installed (mainly for tests). */
   force?: boolean;
 };
