@@ -401,6 +401,7 @@ export type FocusManifestSettings = Partial<
     | "closeOwnerAuthors"
     | "skipAutomationBotAuthors"
     | "duplicateWinnerMode"
+    | "openPrFileCollisionMode"
     | "autoLabelEnabled"
     | "typeLabelsEnabled"
     | "badgeEnabled"
@@ -2243,6 +2244,10 @@ function parseSettingsOverride(value: JsonValue | undefined, warnings: string[])
   // default -- "inherit" defers to it, "off"/"enabled" override in either direction for this repo.
   const duplicateWinnerMode = normalizeOptionalEnum(r.duplicateWinnerMode, "settings.duplicateWinnerMode", ["inherit", "off", "enabled"] as const, warnings);
   if (duplicateWinnerMode !== null) out.duplicateWinnerMode = duplicateWinnerMode;
+  // Open-PR file-path collision annotations (#2653): per-repo override of the global LOOPOVER_OPEN_PR_FILE_COLLISION
+  // default -- "inherit" defers to it, "off"/"enabled" override in either direction for this repo.
+  const openPrFileCollisionMode = normalizeOptionalEnum(r.openPrFileCollisionMode, "settings.openPrFileCollisionMode", ["inherit", "off", "enabled"] as const, warnings);
+  if (openPrFileCollisionMode !== null) out.openPrFileCollisionMode = openPrFileCollisionMode;
   // Moderation-rules engine (#selfhost-mod-engine): per-repo override of the global moderation config.
   const moderationGateMode = normalizeOptionalEnum(r.moderationGateMode, "settings.moderationGateMode", ["inherit", "off", "enabled"] as const, warnings);
   if (moderationGateMode !== null) out.moderationGateMode = moderationGateMode;

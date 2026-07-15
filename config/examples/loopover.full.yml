@@ -718,6 +718,15 @@ settings:
   # inherit | off | enabled. Default: inherit.
   # duplicateWinnerMode: inherit
 
+  # Open-PR file-path collision annotations (#2653): enriches preflight/queue-health
+  # output with which open PRs touch overlapping files -- display-only, never a
+  # close/gate blocker. Costs an extra GitHub API round-trip per open PR, so this is
+  # opt-in and off by default. "inherit" defers to the self-host operator's
+  # LOOPOVER_OPEN_PR_FILE_COLLISION env default (itself off by default); "off"/"enabled"
+  # override that default in either direction for this repo.
+  # inherit | off | enabled. Default: inherit.
+  # openPrFileCollisionMode: inherit
+
   # Hard manual-review path guardrails are config-as-code only. Safe by default (#3943): whatever you list
   # here is ADDED to a fixed, built-in invariant set (CI workflows/scripts, deploy config, config-as-code
   # files, core engine-decision paths — see DEFAULT_HARD_GUARDRAIL_GLOBS in src/review/guardrail-config.ts)

@@ -315,6 +315,7 @@ import {
 } from "../signals/engine";
 import { isDuplicateClusterWinnerByClaim } from "../signals/duplicate-winner";
 import { isDuplicateWinnerEnabledGlobally, resolveDuplicateWinnerEnabled } from "../settings/duplicate-winner-mode";
+import { isOpenPrFileCollisionEnabledGlobally, resolveOpenPrFileCollisionEnabled } from "../settings/open-pr-file-collision-mode";
 import { buildAiReviewDiff, buildSecretScanDiff, buildUnifiedReviewDiff, totalAddedLineCount } from "../review/review-diff";
 // #4013 step 4 (prep): buildAiReviewDiff/buildSecretScanDiff moved to review-diff.ts (a natural existing
 // home -- both already wrapped buildUnifiedReviewDiff there) rather than staying here, since keeping them
@@ -8380,7 +8381,7 @@ async function maybePublishPrPublicSurface(
     // Scoped to collision/preflight/queue-health inputs only — every OTHER use of repoPullRequests below (e.g. the
     // duplicate-winner adjudication, which is same-linked-issue-based, not path-based) keeps reading the un-enriched array.
     const collisionPullRequests =
-      env.LOOPOVER_OPEN_PR_FILE_COLLISION === "true"
+      resolveOpenPrFileCollisionEnabled(isOpenPrFileCollisionEnabledGlobally(env), settings.openPrFileCollisionMode)
         ? await enrichOpenPullRequestsWithChangedFiles(env, repoFullName, repoPullRequests)
         : repoPullRequests;
     collisions = buildCollisionReport(

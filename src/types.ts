@@ -1202,6 +1202,13 @@ export type RepositorySettings = {
    *  default in either direction for this repo. No DB column -- config-as-code only, set via `.loopover.yml
    *  settings.duplicateWinnerMode`. */
   duplicateWinnerMode?: "inherit" | "off" | "enabled" | undefined;
+  /** Open-PR file-path collision annotations (#2653): enriches preflight/queue-health output with which open
+   *  PRs touch overlapping files -- display-only, never a close/gate blocker. Costs an extra GitHub API
+   *  round-trip per open PR to fetch changed files, so this is opt-in and default-OFF, unlike most settings
+   *  here. `"inherit"` (the default) defers to the `LOOPOVER_OPEN_PR_FILE_COLLISION` global env default
+   *  (itself default-OFF); `"off"`/`"enabled"` fully override the global default in either direction for this
+   *  repo. No DB column -- config-as-code only, set via `.loopover.yml settings.openPrFileCollisionMode`. */
+  openPrFileCollisionMode?: "inherit" | "off" | "enabled" | undefined;
   /** Review-evasion protection (#review-evasion-protection): a contributor closing or converting their OWN
    *  PR to draft while loopover has an ACTIVE review pass running against it is dodging the one-shot
    *  review process. The effective default is `"close"` as of #4011 (see `normalizeReviewEvasionProtection`

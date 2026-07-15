@@ -9673,6 +9673,14 @@
           "updatedAt": {
             "type": "string",
             "nullable": true
+          },
+          "openPrFileCollisionMode": {
+            "type": "string",
+            "enum": [
+              "inherit",
+              "off",
+              "enabled"
+            ]
           }
         },
         "required": [

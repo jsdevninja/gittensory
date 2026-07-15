@@ -354,6 +354,12 @@ export type RepositorySettings = {
    *  default-OFF); `"off"`/`"enabled"` fully override the global default in either direction for this repo. No
    *  DB column -- config-as-code only, set via `.loopover.yml settings.duplicateWinnerMode`. */
   duplicateWinnerMode?: "inherit" | "off" | "enabled" | undefined;
+  /** Open-PR file-path collision annotations (#2653): enriches preflight/queue-health output with which open
+   *  PRs touch overlapping files -- display-only, never a close/gate blocker. `"inherit"` defers to the
+   *  `LOOPOVER_OPEN_PR_FILE_COLLISION` global env default (itself default-OFF); `"off"`/`"enabled"` fully
+   *  override the global default in either direction for this repo. No DB column -- config-as-code only, set
+   *  via `.loopover.yml settings.openPrFileCollisionMode`. */
+  openPrFileCollisionMode?: "inherit" | "off" | "enabled" | undefined;
   autoLabelEnabled: boolean;
   gittensorLabel: string;
   createMissingLabel: boolean;

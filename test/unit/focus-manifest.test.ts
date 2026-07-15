@@ -310,6 +310,7 @@ describe(".loopover.yml.example field-exhaustiveness (#1670)", () => {
     autoProjectMilestoneMatchBackend: "autoProjectMilestoneMatchBackend:",
     closeOwnerAuthors: "closeOwnerAuthors:",
     duplicateWinnerMode: "duplicateWinnerMode:",
+    openPrFileCollisionMode: "openPrFileCollisionMode:",
     autoLabelEnabled: "autoLabelEnabled:",
     typeLabelsEnabled: "typeLabelsEnabled:",
     badgeEnabled: "badgeEnabled:",
@@ -2530,6 +2531,21 @@ describe("parseFocusManifest settings override + resolveEffectiveSettings", () =
     const invalid = parseFocusManifest({ settings: { duplicateWinnerMode: "sometimes" as never } });
     expect(invalid.settings.duplicateWinnerMode).toBeUndefined();
     expect(invalid.warnings.some((w) => /settings\.duplicateWinnerMode/.test(w))).toBe(true);
+  });
+
+  it("parses + resolves openPrFileCollisionMode from the settings: block, overlaying the DB (#2653)", () => {
+    const manifest = parseFocusManifest({ settings: { openPrFileCollisionMode: "enabled" } });
+    expect(manifest.settings.openPrFileCollisionMode).toBe("enabled");
+    // yml overlays (replaces) the DB-configured value.
+    const eff = resolveEffectiveSettings({ openPrFileCollisionMode: "off" } as unknown as RepositorySettings, manifest);
+    expect(eff.openPrFileCollisionMode).toBe("enabled");
+    // Omitted in yml ⇒ the DB-configured value survives untouched.
+    const noOverride = resolveEffectiveSettings({ openPrFileCollisionMode: "off" } as unknown as RepositorySettings, parseFocusManifest({}));
+    expect(noOverride.openPrFileCollisionMode).toBe("off");
+    // An invalid enum is dropped with a warning rather than silently coerced.
+    const invalid = parseFocusManifest({ settings: { openPrFileCollisionMode: "sometimes" as never } });
+    expect(invalid.settings.openPrFileCollisionMode).toBeUndefined();
+    expect(invalid.warnings.some((w) => /settings\.openPrFileCollisionMode/.test(w))).toBe(true);
   });
 
   it("moderationRules accepts review_evasion alongside the original three rule types (#review-evasion-protection)", () => {
