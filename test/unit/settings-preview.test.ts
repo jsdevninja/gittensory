@@ -449,8 +449,29 @@ describe("buildRepoSettingsPreview", () => {
       sample: { authorLogin: "miner", minerStatus: "confirmed", title: "Improve wallet hotkey trust score payout", body: "raw trust and scoreability /100 reviewability 5", labels: ["bug"], linkedIssues: [7] },
     });
     expect(preview.previewComment).not.toBeNull();
-    expect(preview.previewComment ?? "").toMatch(/Readiness score: \d+\/100/);
+    // #6103: the converged renderer shows readiness as a `readiness N/100` status chip, not "Readiness score:" prose.
+    expect(preview.previewComment ?? "").toMatch(/`readiness \d+\/100`/);
     expect(preview.previewComment ?? "").not.toMatch(/wallet|hotkey|trust score|raw trust|scoreability|payout|reward|farming|reviewability\s*\d/i);
+  });
+
+  it("#6103: simulates a passing gate in the preview comment when the opt-in gate is enabled and the linked-issue block does not apply", () => {
+    const preview = buildRepoSettingsPreview({env: {},
+      ...base,
+      settings: settings({ reviewCheckMode: "required", linkedIssueGateMode: "block" }),
+      installation: healthyInstall,
+      sample: { authorLogin: "miner", minerStatus: "confirmed", linkedIssues: [7] },
+    });
+    expect(preview.previewComment ?? "").toContain("✅ Gate result — Passing");
+  });
+
+  it("#6103: simulates a failing gate in the preview comment when linkedIssueGateMode is 'block' and the sample has no linked issue", () => {
+    const preview = buildRepoSettingsPreview({env: {},
+      ...base,
+      settings: settings({ reviewCheckMode: "required", linkedIssueGateMode: "block" }),
+      installation: healthyInstall,
+      sample: { authorLogin: "miner", minerStatus: "confirmed", linkedIssues: [] },
+    });
+    expect(preview.previewComment ?? "").toContain("❌ Gate result — Blocking");
   });
 
   it("reports a generic needs-attention summary when health is degraded but no permission or event is missing", () => {
