@@ -314,6 +314,7 @@ import {
   type ContributorProfile,
 } from "../signals/engine";
 import { isDuplicateClusterWinnerByClaim } from "../signals/duplicate-winner";
+import { isDuplicateWinnerEnabledGlobally, resolveDuplicateWinnerEnabled } from "../settings/duplicate-winner-mode";
 import { buildAiReviewDiff, buildSecretScanDiff, buildUnifiedReviewDiff, totalAddedLineCount } from "../review/review-diff";
 // #4013 step 4 (prep): buildAiReviewDiff/buildSecretScanDiff moved to review-diff.ts (a natural existing
 // home -- both already wrapped buildUnifiedReviewDiff there) rather than staying here, since keeping them
@@ -1464,7 +1465,7 @@ export async function sweepRepoRegate(
   const verdicts: Record<string, string> = {};
   const flaggedPulls: number[] = [];
   const sweepInstallationId = repo?.installationId ?? null;
-  const duplicateWinnerEnabled = env.LOOPOVER_DUPLICATE_WINNER === "true";
+  const duplicateWinnerEnabled = resolveDuplicateWinnerEnabled(isDuplicateWinnerEnabledGlobally(env), settings.duplicateWinnerMode);
   // #selfhost-queue-liveness: priorityPullNumbers (surfaceRepairPriorityPullNumbers, above) are OUTAGE REPAIR --
   // a PR with no current-head Gate check or an unpublished current-head surface -- not routine staleness. A
   // repair candidate's fanned-out job must NOT carry the "regate-sweep:" deliveryId prefix, or
@@ -2892,7 +2893,7 @@ async function runAgentMaintenancePlanAndExecute(
   const approvalsSatisfied =
     autoMaintain.requireApprovals === 0 ||
     (liveReviewDecision ?? pr.reviewDecision) === "APPROVED";
-  const duplicateWinnerEnabled = env.LOOPOVER_DUPLICATE_WINNER === "true";
+  const duplicateWinnerEnabled = resolveDuplicateWinnerEnabled(isDuplicateWinnerEnabledGlobally(env), settings.duplicateWinnerMode);
   const openDuplicateSiblings = linkedIssueDuplicatePullRequestRecordsForGate(pr, otherOpenPullRequests);
   // AI-review low-confidence guardrail (#4603): resolved PURELY from this pass's own gate evaluation + settings
   // (no extra network/DB call, unlike migrationCollisionHold/unlinkedIssueMatchHold above) -- undefined unless the
@@ -3317,11 +3318,12 @@ export async function reReviewStoredPullRequest(
     repoFullName,
     pr,
     cachedOtherOpenPullRequests,
+    settings,
   );
   const advisory = buildPullRequestAdvisory(repo, pr, {
     otherOpenPullRequests,
     requireLinkedIssue: shouldCollectLinkedIssueEvidence(settings),
-    duplicateWinnerEnabled: env.LOOPOVER_DUPLICATE_WINNER === "true",
+    duplicateWinnerEnabled: resolveDuplicateWinnerEnabled(isDuplicateWinnerEnabledGlobally(env), settings.duplicateWinnerMode),
     confirmedNoOpenLinkedIssue,
     linkedIssueAuthorLogins,
   });
@@ -5753,11 +5755,12 @@ async function handlePullRequestWebhookEvent(
       repoFullName,
       pr,
       cachedOtherOpenPullRequests,
+      settings,
     );
     const advisory = buildPullRequestAdvisory(repo, pr, {
       otherOpenPullRequests,
       requireLinkedIssue: shouldCollectLinkedIssueEvidence(settings),
-      duplicateWinnerEnabled: env.LOOPOVER_DUPLICATE_WINNER === "true",
+      duplicateWinnerEnabled: resolveDuplicateWinnerEnabled(isDuplicateWinnerEnabledGlobally(env), settings.duplicateWinnerMode),
       confirmedNoOpenLinkedIssue,
       linkedIssueAuthorLogins,
     });
@@ -8420,7 +8423,7 @@ async function maybePublishPrPublicSurface(
       pr,
       otherOpenPullRequests,
     );
-    const duplicateWinnerEnabled = env.LOOPOVER_DUPLICATE_WINNER === "true";
+    const duplicateWinnerEnabled = resolveDuplicateWinnerEnabled(isDuplicateWinnerEnabledGlobally(env), settings.duplicateWinnerMode);
     const isDupWinner =
       duplicateWinnerEnabled &&
       isDuplicateClusterWinnerByClaim(pr, linkedDuplicatePrsForGate);
@@ -9930,7 +9933,7 @@ async function maybePublishPrPublicSurface(
     // Duplicate-winner adjudication (#dup-winner): thread the flag into the public panel builders so the
     // winner's hard-duplicate block is suppressed (they recompute the winner from their own open-only sibling
     // list). Flag-OFF (default) ⇒ false ⇒ the panels are byte-identical to today.
-    const duplicateWinnerEnabled = env.LOOPOVER_DUPLICATE_WINNER === "true";
+    const duplicateWinnerEnabled = resolveDuplicateWinnerEnabled(isDuplicateWinnerEnabledGlobally(env), settings.duplicateWinnerMode);
     // improvementSignal deterministic tier (#4742/#4744): pure/sync, no AI dependency, so it is computed
     // independent of aiReview's own eligibility gates above (a paused repo, non-reviewable author, or
     // aiReviewMode: "off" still gets this tier -- the two tiers are deliberately independent, epic #4737).
@@ -12006,6 +12009,7 @@ export async function buildAuthorizedPrActionAdvisory(
     repoFullName,
     pr,
     cachedOtherOpenPullRequests,
+    settings,
   );
   // Mirror the main webhook path: thread linked-issue authors + the open-reference check so an authorized PR
   // action (gate-override / panel retrigger) honors the same self-authored-linked-issue block AND stale-
@@ -12020,7 +12024,7 @@ export async function buildAuthorizedPrActionAdvisory(
   const advisory = buildPullRequestAdvisory(repo, pr, {
     otherOpenPullRequests,
     requireLinkedIssue: shouldCollectLinkedIssueEvidence(settings),
-    duplicateWinnerEnabled: env.LOOPOVER_DUPLICATE_WINNER === "true",
+    duplicateWinnerEnabled: resolveDuplicateWinnerEnabled(isDuplicateWinnerEnabledGlobally(env), settings.duplicateWinnerMode),
     confirmedNoOpenLinkedIssue,
     linkedIssueAuthorLogins,
   });

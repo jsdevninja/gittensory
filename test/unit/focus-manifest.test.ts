@@ -309,6 +309,7 @@ describe(".loopover.yml.example field-exhaustiveness (#1670)", () => {
     autoProjectMilestoneMatch: "autoProjectMilestoneMatch:",
     autoProjectMilestoneMatchBackend: "autoProjectMilestoneMatchBackend:",
     closeOwnerAuthors: "closeOwnerAuthors:",
+    duplicateWinnerMode: "duplicateWinnerMode:",
     autoLabelEnabled: "autoLabelEnabled:",
     typeLabelsEnabled: "typeLabelsEnabled:",
     badgeEnabled: "badgeEnabled:",
@@ -2514,6 +2515,21 @@ describe("parseFocusManifest settings override + resolveEffectiveSettings", () =
     const invalid = parseFocusManifest({ settings: { skipAutomationBotAuthors: "sometimes" as never } });
     expect(invalid.settings.skipAutomationBotAuthors).toBeUndefined();
     expect(invalid.warnings.some((w) => /settings\.skipAutomationBotAuthors/.test(w))).toBe(true);
+  });
+
+  it("parses + resolves duplicateWinnerMode from the settings: block, overlaying the DB (#dup-winner)", () => {
+    const manifest = parseFocusManifest({ settings: { duplicateWinnerMode: "enabled" } });
+    expect(manifest.settings.duplicateWinnerMode).toBe("enabled");
+    // yml overlays (replaces) the DB-configured value.
+    const eff = resolveEffectiveSettings({ duplicateWinnerMode: "off" } as unknown as RepositorySettings, manifest);
+    expect(eff.duplicateWinnerMode).toBe("enabled");
+    // Omitted in yml ⇒ the DB-configured value survives untouched.
+    const noOverride = resolveEffectiveSettings({ duplicateWinnerMode: "off" } as unknown as RepositorySettings, parseFocusManifest({}));
+    expect(noOverride.duplicateWinnerMode).toBe("off");
+    // An invalid enum is dropped with a warning rather than silently coerced.
+    const invalid = parseFocusManifest({ settings: { duplicateWinnerMode: "sometimes" as never } });
+    expect(invalid.settings.duplicateWinnerMode).toBeUndefined();
+    expect(invalid.warnings.some((w) => /settings\.duplicateWinnerMode/.test(w))).toBe(true);
   });
 
   it("moderationRules accepts review_evasion alongside the original three rule types (#review-evasion-protection)", () => {

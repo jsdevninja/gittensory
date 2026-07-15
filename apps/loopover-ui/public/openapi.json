@@ -8812,6 +8812,12 @@
               "block"
             ]
           },
+          "sizeGateMaxFiles": {
+            "type": "number"
+          },
+          "sizeGateMaxLines": {
+            "type": "number"
+          },
           "lockfileIntegrityGateMode": {
             "type": "string",
             "enum": [
@@ -8844,6 +8850,25 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "advisoryCheckRuns": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "appSlug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "appSlug"
+              ]
             }
           },
           "copycatGateMode": {
@@ -8940,6 +8965,10 @@
           },
           "aiReviewAllAuthors": {
             "type": "boolean"
+          },
+          "aiReviewConfirmedContributorsOnly": {
+            "type": "boolean",
+            "nullable": true
           },
           "aiReviewCloseConfidence": {
             "type": "number",
@@ -9463,6 +9492,10 @@
               "type": "string"
             }
           },
+          "hardGuardrailGlobsOverridesInvariants": {
+            "type": "boolean",
+            "nullable": true
+          },
           "manualReviewLabel": {
             "type": "string",
             "nullable": true
@@ -9542,6 +9575,14 @@
             "type": "string"
           },
           "skipAutomationBotAuthors": {
+            "type": "string",
+            "enum": [
+              "inherit",
+              "off",
+              "enabled"
+            ]
+          },
+          "duplicateWinnerMode": {
             "type": "string",
             "enum": [
               "inherit",
@@ -9632,39 +9673,6 @@
           "updatedAt": {
             "type": "string",
             "nullable": true
-          },
-          "hardGuardrailGlobsOverridesInvariants": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "aiReviewConfirmedContributorsOnly": {
-            "type": "boolean",
-            "nullable": true
-          },
-          "advisoryCheckRuns": {
-            "type": "array",
-            "nullable": true,
-            "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string"
-                },
-                "appSlug": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "name",
-                "appSlug"
-              ]
-            }
-          },
-          "sizeGateMaxFiles": {
-            "type": "number"
-          },
-          "sizeGateMaxLines": {
-            "type": "number"
           }
         },
         "required": [
@@ -10341,6 +10349,10 @@
               "aiReviewAllAuthors": {
                 "type": "boolean"
               },
+              "aiReviewConfirmedContributorsOnly": {
+                "type": "boolean",
+                "nullable": true
+              },
               "commandAuthorization": {
                 "type": "object",
                 "properties": {
@@ -10388,10 +10400,6 @@
                   "defaultAllowed",
                   "commandOverrides"
                 ]
-              },
-              "aiReviewConfirmedContributorsOnly": {
-                "type": "boolean",
-                "nullable": true
               }
             },
             "required": [
@@ -10700,6 +10708,67 @@
               "detailLevel"
             ]
           },
+          "checkRunReadiness": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "readinessBand": {
+                "type": "string",
+                "enum": [
+                  "strong",
+                  "developing",
+                  "early"
+                ]
+              },
+              "components": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "enum": [
+                        "traceability",
+                        "related_work",
+                        "change_scope",
+                        "validation",
+                        "pr_state",
+                        "queue_pressure"
+                      ]
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "band": {
+                      "type": "string",
+                      "enum": [
+                        "met",
+                        "partial",
+                        "unmet"
+                      ]
+                    },
+                    "evidence": {
+                      "type": "string"
+                    },
+                    "action": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "label",
+                    "band",
+                    "evidence",
+                    "action"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "readinessBand",
+              "components"
+            ]
+          },
           "installPreview": {
             "type": "object",
             "properties": {
@@ -10882,67 +10951,6 @@
           },
           "summary": {
             "type": "string"
-          },
-          "checkRunReadiness": {
-            "type": "object",
-            "nullable": true,
-            "properties": {
-              "readinessBand": {
-                "type": "string",
-                "enum": [
-                  "strong",
-                  "developing",
-                  "early"
-                ]
-              },
-              "components": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "key": {
-                      "type": "string",
-                      "enum": [
-                        "traceability",
-                        "related_work",
-                        "change_scope",
-                        "validation",
-                        "pr_state",
-                        "queue_pressure"
-                      ]
-                    },
-                    "label": {
-                      "type": "string"
-                    },
-                    "band": {
-                      "type": "string",
-                      "enum": [
-                        "met",
-                        "partial",
-                        "unmet"
-                      ]
-                    },
-                    "evidence": {
-                      "type": "string"
-                    },
-                    "action": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "key",
-                    "label",
-                    "band",
-                    "evidence",
-                    "action"
-                  ]
-                }
-              }
-            },
-            "required": [
-              "readinessBand",
-              "components"
-            ]
           }
         },
         "required": [
@@ -14353,6 +14361,16 @@
     },
     "/v1/installations/{id}/health": {
       "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
         "responses": {
           "200": {
             "description": "GitHub App installation health",
@@ -14375,7 +14393,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/installations/{id}/repair": {
+      "get": {
         "parameters": [
           {
             "schema": {
@@ -14385,11 +14407,7 @@
             "name": "id",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/installations/{id}/repair": {
-      "get": {
+        ],
         "responses": {
           "200": {
             "description": "GitHub App installation repair diagnostics",
@@ -14412,7 +14430,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/installations/{id}/repair/refresh": {
+      "post": {
         "parameters": [
           {
             "schema": {
@@ -14422,11 +14444,7 @@
             "name": "id",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/installations/{id}/repair/refresh": {
-      "post": {
+        ],
         "responses": {
           "200": {
             "description": "Refreshed GitHub App installation repair diagnostics",
@@ -14448,16 +14466,6 @@
           },
           {
             "LoopOverSessionCookie": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
           }
         ]
       }
@@ -14630,6 +14638,24 @@
     },
     "/v1/repos/{owner}/{repo}": {
       "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "owner",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "repo",
+            "in": "path"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Repository detail",
@@ -14652,7 +14678,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/repos/{owner}/{repo}/intelligence": {
+      "get": {
         "parameters": [
           {
             "schema": {
@@ -14670,11 +14700,7 @@
             "name": "repo",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/repos/{owner}/{repo}/intelligence": {
-      "get": {
+        ],
         "responses": {
           "200": {
             "description": "Canonical repository intelligence bundle",
@@ -14694,7 +14720,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/repos/{owner}/{repo}/issue-quality": {
+      "get": {
         "parameters": [
           {
             "schema": {
@@ -14712,11 +14742,7 @@
             "name": "repo",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/repos/{owner}/{repo}/issue-quality": {
-      "get": {
+        ],
         "responses": {
           "200": {
             "description": "Cached or computed issue quality report for the repo",
@@ -14739,7 +14765,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/repos/{owner}/{repo}/outcome-patterns": {
+      "get": {
         "parameters": [
           {
             "schema": {
@@ -14757,11 +14787,7 @@
             "name": "repo",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/repos/{owner}/{repo}/outcome-patterns": {
-      "get": {
+        ],
         "responses": {
           "200": {
             "description": "Cached or freshly-computed per-repo accepted/rejected PR outcome patterns with freshness envelope and explicit evidence-completeness",
@@ -14784,7 +14810,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/repos/{owner}/{repo}/registration-readiness": {
+      "get": {
         "parameters": [
           {
             "schema": {
@@ -14802,11 +14832,7 @@
             "name": "repo",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/repos/{owner}/{repo}/registration-readiness": {
-      "get": {
+        ],
         "responses": {
           "200": {
             "description": "Gittensor registration readiness signal for repo owners",
@@ -14826,7 +14852,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/repos/{owner}/{repo}/gittensor-config-recommendation": {
+      "get": {
         "parameters": [
           {
             "schema": {
@@ -14844,11 +14874,7 @@
             "name": "repo",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/repos/{owner}/{repo}/gittensor-config-recommendation": {
-      "get": {
+        ],
         "responses": {
           "200": {
             "description": "Private Gittensor config recommendation for repo owners",
@@ -14868,7 +14894,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/repos/{owner}/{repo}/focus-manifest": {
+      "get": {
         "parameters": [
           {
             "schema": {
@@ -14886,11 +14916,7 @@
             "name": "repo",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/repos/{owner}/{repo}/focus-manifest": {
-      "get": {
+        ],
         "responses": {
           "200": {
             "description": "Repo focus manifest and compiled policy for maintainers",
@@ -14916,7 +14942,9 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      },
+      "put": {
         "parameters": [
           {
             "schema": {
@@ -14934,9 +14962,7 @@
             "name": "repo",
             "in": "path"
           }
-        ]
-      },
-      "put": {
+        ],
         "responses": {
           "200": {
             "description": "Persist API-backed focus manifest for a repo",
@@ -14965,7 +14991,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/repos/{owner}/{repo}/focus-manifest/refresh": {
+      "post": {
         "parameters": [
           {
             "schema": {
@@ -14983,11 +15013,7 @@
             "name": "repo",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/repos/{owner}/{repo}/focus-manifest/refresh": {
-      "post": {
+        ],
         "responses": {
           "200": {
             "description": "Refresh the persisted focus manifest cache from the repo file",
@@ -15013,7 +15039,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/repos/{owner}/{repo}/agent/audit-feed": {
+      "get": {
         "parameters": [
           {
             "schema": {
@@ -15031,11 +15061,7 @@
             "name": "repo",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/repos/{owner}/{repo}/agent/audit-feed": {
-      "get": {
+        ],
         "responses": {
           "200": {
             "description": "Maintainer-scoped agent audit feed (#784): executed actions + approval-queue decisions, newest first, public-safe action posture only. Supports ?since=ISO-8601&limit=1-200. ?pull=N opts into the unfiltered sibling query: every audit_events row for that one PR's targetKey (no eventType restriction), still maintainer-gated and detail-sanitized the same way.",
@@ -15159,7 +15185,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/repos/{owner}/{repo}/pulls/{number}/incident-reports": {
+      "post": {
         "parameters": [
           {
             "schema": {
@@ -15176,6 +15206,218 @@
             "required": true,
             "name": "repo",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "number",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  },
+                  "severity": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "critical"
+                    ]
+                  },
+                  "mergedSha": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "description",
+                  "severity"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Post-merge incident report recorded as an audit_events row (#5672), customer-facing (repo maintainer) side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "repoFullName": {
+                      "type": "string"
+                    },
+                    "pullNumber": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "repoFullName",
+                    "pullNumber",
+                    "id",
+                    "createdAt"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pull number or incident report body"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient role"
+          },
+          "404": {
+            "description": "Pull request not found"
+          },
+          "409": {
+            "description": "Pull request has not been merged"
+          }
+        },
+        "security": [
+          {
+            "LoopOverBearer": []
+          },
+          {
+            "LoopOverSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/v1/app/incident-reports": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repoFullName": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 200
+                  },
+                  "pullNumber": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  },
+                  "severity": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "critical"
+                    ]
+                  },
+                  "mergedSha": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "repoFullName",
+                  "pullNumber",
+                  "description",
+                  "severity"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Post-merge incident report recorded as an audit_events row (#5672), internal-operator side",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "repoFullName": {
+                      "type": "string"
+                    },
+                    "pullNumber": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "repoFullName",
+                    "pullNumber",
+                    "id",
+                    "createdAt"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid incident report body"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient app role (operator only)"
+          },
+          "404": {
+            "description": "Pull request not found"
+          },
+          "409": {
+            "description": "Pull request has not been merged"
+          }
+        },
+        "security": [
+          {
+            "LoopOverBearer": []
+          },
+          {
+            "LoopOverSessionCookie": []
           }
         ]
       }
@@ -15212,6 +15454,24 @@
     },
     "/v1/repos/{owner}/{repo}/self-dogfood-registration-pack": {
       "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "owner",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "repo",
+            "in": "path"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Private self-dogfood registration pack when repo matches configured LoopOver target",
@@ -15237,7 +15497,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/repos/{owner}/{repo}/onboarding-pack/preview": {
+      "get": {
         "parameters": [
           {
             "schema": {
@@ -15255,11 +15519,7 @@
             "name": "repo",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/repos/{owner}/{repo}/onboarding-pack/preview": {
-      "get": {
+        ],
         "responses": {
           "200": {
             "description": "Preview-only repo onboarding pack for accepted repositories",
@@ -15288,7 +15548,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/repos/{owner}/{repo}/contributor-issue-drafts/generate": {
+      "post": {
         "parameters": [
           {
             "schema": {
@@ -15306,11 +15570,7 @@
             "name": "repo",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/repos/{owner}/{repo}/contributor-issue-drafts/generate": {
-      "post": {
+        ],
         "responses": {
           "200": {
             "description": "Generate maintainer-reviewed contributor issue drafts from repo policy (dry-run by default)",
@@ -15339,7 +15599,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/repos/{owner}/{repo}/settings": {
+      "get": {
         "parameters": [
           {
             "schema": {
@@ -15357,11 +15621,7 @@
             "name": "repo",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/repos/{owner}/{repo}/settings": {
-      "get": {
+        ],
         "responses": {
           "200": {
             "description": "LoopOver repository automation settings",
@@ -15381,7 +15641,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/repos/{owner}/{repo}/settings-preview": {
+      "post": {
         "parameters": [
           {
             "schema": {
@@ -15399,11 +15663,7 @@
             "name": "repo",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/repos/{owner}/{repo}/settings-preview": {
-      "post": {
+        ],
         "responses": {
           "200": {
             "description": "Maintainer dry-run preview of the public surface decision for a sample PR (no GitHub mutation)",
@@ -15426,7 +15686,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/repos/{owner}/{repo}/pulls/{number}/maintainer-packet": {
+      "get": {
         "parameters": [
           {
             "schema": {
@@ -15443,12 +15707,16 @@
             "required": true,
             "name": "repo",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "number",
+            "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/repos/{owner}/{repo}/pulls/{number}/maintainer-packet": {
-      "get": {
+        ],
         "responses": {
           "200": {
             "description": "PR-specific maintainer review packet",
@@ -15468,7 +15736,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/repos/{owner}/{repo}/pulls/{number}/reviewability": {
+      "get": {
         "parameters": [
           {
             "schema": {
@@ -15494,11 +15766,7 @@
             "name": "number",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/repos/{owner}/{repo}/pulls/{number}/reviewability": {
-      "get": {
+        ],
         "responses": {
           "200": {
             "description": "Private PR reviewability score and maintainer action",
@@ -15518,37 +15786,21 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/contributors/{login}/profile": {
+      "get": {
         "parameters": [
           {
             "schema": {
               "type": "string"
             },
             "required": true,
-            "name": "owner",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "repo",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "number",
+            "name": "login",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/contributors/{login}/profile": {
-      "get": {
+        ],
         "responses": {
           "200": {
             "description": "Contributor evidence profile",
@@ -15568,7 +15820,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/contributors/{login}/decision-pack": {
+      "get": {
         "parameters": [
           {
             "schema": {
@@ -15578,11 +15834,7 @@
             "name": "login",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/contributors/{login}/decision-pack": {
-      "get": {
+        ],
         "responses": {
           "200": {
             "description": "Canonical private contributor decision pack. May carry freshness 'stale' or 'rebuilding' when a background rebuild is in progress.",
@@ -15612,7 +15864,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/contributors/{login}/open-pr-monitor": {
+      "get": {
         "parameters": [
           {
             "schema": {
@@ -15622,11 +15878,7 @@
             "name": "login",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/contributors/{login}/open-pr-monitor": {
-      "get": {
+        ],
         "responses": {
           "200": {
             "description": "Contributor open-PR monitor with classifications and public-safe next-step packets from cached metadata.",
@@ -15646,7 +15898,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/contributors/{login}/repos/{owner}/{repo}/decision": {
+      "get": {
         "parameters": [
           {
             "schema": {
@@ -15655,12 +15911,24 @@
             "required": true,
             "name": "login",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "owner",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "repo",
+            "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/contributors/{login}/repos/{owner}/{repo}/decision": {
-      "get": {
+        ],
         "responses": {
           "200": {
             "description": "Repo-specific contributor decision from decision pack. May carry freshness 'stale' or 'rebuilding'.",
@@ -15689,32 +15957,6 @@
           },
           {
             "LoopOverSessionCookie": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "login",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "owner",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "repo",
-            "in": "path"
           }
         ]
       }
@@ -15897,6 +16139,16 @@
     },
     "/v1/agent/runs/{id}": {
       "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Persisted agent run bundle",
@@ -15918,16 +16170,6 @@
           },
           {
             "LoopOverSessionCookie": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
           }
         ]
       }
@@ -16121,6 +16363,16 @@
     },
     "/v1/bounties/{id}/advisory": {
       "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Bounty lifecycle advisory",
@@ -16143,7 +16395,11 @@
           {
             "LoopOverSessionCookie": []
           }
-        ],
+        ]
+      }
+    },
+    "/v1/bounties/{id}/lifecycle": {
+      "get": {
         "parameters": [
           {
             "schema": {
@@ -16153,11 +16409,7 @@
             "name": "id",
             "in": "path"
           }
-        ]
-      }
-    },
-    "/v1/bounties/{id}/lifecycle": {
-      "get": {
+        ],
         "responses": {
           "200": {
             "description": "Bounty lifecycle transition history",
@@ -16179,16 +16431,6 @@
           },
           {
             "LoopOverSessionCookie": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
           }
         ]
       }
@@ -17533,240 +17775,6 @@
           },
           "401": {
             "description": "Invalid internal token"
-          }
-        },
-        "security": [
-          {
-            "LoopOverBearer": []
-          },
-          {
-            "LoopOverSessionCookie": []
-          }
-        ]
-      }
-    },
-    "/v1/repos/{owner}/{repo}/pulls/{number}/incident-reports": {
-      "post": {
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "owner",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "repo",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "number",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "description": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 4000
-                  },
-                  "severity": {
-                    "type": "string",
-                    "enum": [
-                      "low",
-                      "medium",
-                      "high",
-                      "critical"
-                    ]
-                  },
-                  "mergedSha": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "description",
-                  "severity"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Post-merge incident report recorded as an audit_events row (#5672), customer-facing (repo maintainer) side",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean",
-                      "enum": [
-                        true
-                      ]
-                    },
-                    "repoFullName": {
-                      "type": "string"
-                    },
-                    "pullNumber": {
-                      "type": "number"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "createdAt": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "ok",
-                    "repoFullName",
-                    "pullNumber",
-                    "id",
-                    "createdAt"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid pull number or incident report body"
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "403": {
-            "description": "Insufficient role"
-          },
-          "404": {
-            "description": "Pull request not found"
-          },
-          "409": {
-            "description": "Pull request has not been merged"
-          }
-        },
-        "security": [
-          {
-            "LoopOverBearer": []
-          },
-          {
-            "LoopOverSessionCookie": []
-          }
-        ]
-      }
-    },
-    "/v1/app/incident-reports": {
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "repoFullName": {
-                    "type": "string",
-                    "minLength": 3,
-                    "maxLength": 200
-                  },
-                  "pullNumber": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "exclusiveMinimum": true
-                  },
-                  "description": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 4000
-                  },
-                  "severity": {
-                    "type": "string",
-                    "enum": [
-                      "low",
-                      "medium",
-                      "high",
-                      "critical"
-                    ]
-                  },
-                  "mergedSha": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "repoFullName",
-                  "pullNumber",
-                  "description",
-                  "severity"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Post-merge incident report recorded as an audit_events row (#5672), internal-operator side",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean",
-                      "enum": [
-                        true
-                      ]
-                    },
-                    "repoFullName": {
-                      "type": "string"
-                    },
-                    "pullNumber": {
-                      "type": "number"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "createdAt": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "ok",
-                    "repoFullName",
-                    "pullNumber",
-                    "id",
-                    "createdAt"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid incident report body"
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "403": {
-            "description": "Insufficient app role (operator only)"
-          },
-          "404": {
-            "description": "Pull request not found"
-          },
-          "409": {
-            "description": "Pull request has not been merged"
           }
         },
         "security": [

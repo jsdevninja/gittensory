@@ -847,6 +847,7 @@ export const RepositorySettingsSchema = z
     moderationWarningLabel: z.string().optional(),
     moderationBannedLabel: z.string().optional(),
     skipAutomationBotAuthors: z.enum(["inherit", "off", "enabled"]).optional(),
+    duplicateWinnerMode: z.enum(["inherit", "off", "enabled"]).optional(),
     reviewEvasionProtection: z
       .enum(["off", "close"])
       .optional()

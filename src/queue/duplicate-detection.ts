@@ -10,7 +10,8 @@ import { createInstallationToken } from "../github/app";
 import { fetchLivePullRequestState } from "../github/backfill";
 import { githubRateLimitAdmissionKeyForToken } from "../github/client";
 import { isDuplicateClusterWinnerByClaim, resolveDuplicateClusterWinnerNumber } from "../signals/duplicate-winner";
-import type { PullRequestRecord } from "../types";
+import { isDuplicateWinnerEnabledGlobally, resolveDuplicateWinnerEnabled } from "../settings/duplicate-winner-mode";
+import type { PullRequestRecord, RepositorySettings } from "../types";
 
 /**
  * Duplicate-winner adjudication (#dup-winner) seam for the close-reason disposition. Given a PR's open
@@ -72,8 +73,9 @@ export async function reconcileLiveDuplicateSiblings(
   repoFullName: string,
   pr: PullRequestRecord,
   otherOpenPullRequests: PullRequestRecord[],
+  settings: Pick<RepositorySettings, "duplicateWinnerMode">,
 ): Promise<PullRequestRecord[]> {
-  if (env.LOOPOVER_DUPLICATE_WINNER !== "true") return otherOpenPullRequests;
+  if (!resolveDuplicateWinnerEnabled(isDuplicateWinnerEnabledGlobally(env), settings.duplicateWinnerMode)) return otherOpenPullRequests;
   const linkedIssues = new Set(pr.linkedIssues);
   if (linkedIssues.size === 0) return otherOpenPullRequests;
   const overlapping = otherOpenPullRequests.filter(

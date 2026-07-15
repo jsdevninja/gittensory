@@ -3692,7 +3692,7 @@ describe("installation app_id capture + dual-app webhook filter (#selfhost-app-i
 
       const winner: Parameters<typeof reconcileLiveDuplicateSiblings>[3] = { repoFullName: "owner/repo", number: 10, title: "Winner", state: "open", labels: [], linkedIssues: [1] };
       const sibling: Parameters<typeof reconcileLiveDuplicateSiblings>[3] = { repoFullName: "owner/repo", number: 5, title: "Sibling", state: "open", labels: [], linkedIssues: [1] };
-      const result = await reconcileLiveDuplicateSiblings(env, null, "owner/repo", winner, [sibling]);
+      const result = await reconcileLiveDuplicateSiblings(env, null, "owner/repo", winner, [sibling], { duplicateWinnerMode: undefined });
 
       // The sibling is correctly dropped as stale-closed, proving a genuine live fetch happened rather than
       // trusting the warm-but-wrong cached "open" value.

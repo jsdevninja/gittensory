@@ -30,6 +30,7 @@ import {
 import { normalizeGittBountySnapshot } from "../bounties/ingest";
 import { DEFAULT_COMMAND_AUTHORIZATION_POLICY, normalizeCommandAuthorizationPolicy } from "../settings/command-authorization";
 import { normalizeContributorBlacklist } from "../settings/contributor-blacklist";
+import { isDuplicateWinnerEnabledGlobally, resolveDuplicateWinnerEnabled } from "../settings/duplicate-winner-mode";
 import { SCENARIO_MAX_BRANCH_REF_CHARS, SCENARIO_MAX_LINKED_ISSUE_NUMBERS, SCENARIO_MAX_REPO_FULL_NAME_CHARS } from "../scenarios/input-model";
 import {
   countOpenIssues,
@@ -2604,7 +2605,16 @@ export function createApp() {
       getRepositorySettings(c.env, fullName),
       listPullRequests(c.env, fullName),
     ]);
-    return c.json(buildMaintainerActivationPreview({ repoFullName: fullName, repo, settings, pullRequests, generatedAt: nowIso(), duplicateWinnerEnabled: c.env.LOOPOVER_DUPLICATE_WINNER === "true" }));
+    return c.json(
+      buildMaintainerActivationPreview({
+        repoFullName: fullName,
+        repo,
+        settings,
+        pullRequests,
+        generatedAt: nowIso(),
+        duplicateWinnerEnabled: resolveDuplicateWinnerEnabled(isDuplicateWinnerEnabledGlobally(c.env), settings.duplicateWinnerMode),
+      }),
+    );
   });
 
   // #543 outcome-learning loop: is the slop score predictive, and are recommendations panning out? Read-only

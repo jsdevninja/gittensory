@@ -1194,6 +1194,14 @@ export type RepositorySettings = {
    *  override the global default in either direction for this repo. Always populated by the DB layer;
    *  optional so existing settings fixtures/callers need not be touched. */
   skipAutomationBotAuthors?: "inherit" | "off" | "enabled" | undefined;
+  /** Duplicate-winner adjudication (#dup-winner): when several OPEN PRs link the same issue, the legacy
+   *  behavior closes EVERY sibling as a duplicate. With this active, exactly one winner (the earliest
+   *  claimant) is spared. `"inherit"` (the default, mirrors moderationGateMode/skipAutomationBotAuthors'
+   *  shape) defers to the `LOOPOVER_DUPLICATE_WINNER` global env default (itself default-OFF -- see
+   *  settings/duplicate-winner-mode.ts's own doc comment); `"off"`/`"enabled"` fully override the global
+   *  default in either direction for this repo. No DB column -- config-as-code only, set via `.loopover.yml
+   *  settings.duplicateWinnerMode`. */
+  duplicateWinnerMode?: "inherit" | "off" | "enabled" | undefined;
   /** Review-evasion protection (#review-evasion-protection): a contributor closing or converting their OWN
    *  PR to draft while loopover has an ACTIVE review pass running against it is dodging the one-shot
    *  review process. The effective default is `"close"` as of #4011 (see `normalizeReviewEvasionProtection`

@@ -400,6 +400,7 @@ export type FocusManifestSettings = Partial<
     | "aiReviewConfirmedContributorsOnly"
     | "closeOwnerAuthors"
     | "skipAutomationBotAuthors"
+    | "duplicateWinnerMode"
     | "autoLabelEnabled"
     | "typeLabelsEnabled"
     | "badgeEnabled"
@@ -2238,6 +2239,10 @@ function parseSettingsOverride(value: JsonValue | undefined, warnings: string[])
   // DB/dashboard-write-only despite RepositorySettings already carrying the field; this closes that gap.
   const skipAutomationBotAuthors = normalizeOptionalEnum(r.skipAutomationBotAuthors, "settings.skipAutomationBotAuthors", ["inherit", "off", "enabled"] as const, warnings);
   if (skipAutomationBotAuthors !== null) out.skipAutomationBotAuthors = skipAutomationBotAuthors;
+  // Duplicate-winner adjudication (#dup-winner): per-repo override of the global LOOPOVER_DUPLICATE_WINNER
+  // default -- "inherit" defers to it, "off"/"enabled" override in either direction for this repo.
+  const duplicateWinnerMode = normalizeOptionalEnum(r.duplicateWinnerMode, "settings.duplicateWinnerMode", ["inherit", "off", "enabled"] as const, warnings);
+  if (duplicateWinnerMode !== null) out.duplicateWinnerMode = duplicateWinnerMode;
   // Moderation-rules engine (#selfhost-mod-engine): per-repo override of the global moderation config.
   const moderationGateMode = normalizeOptionalEnum(r.moderationGateMode, "settings.moderationGateMode", ["inherit", "off", "enabled"] as const, warnings);
   if (moderationGateMode !== null) out.moderationGateMode = moderationGateMode;

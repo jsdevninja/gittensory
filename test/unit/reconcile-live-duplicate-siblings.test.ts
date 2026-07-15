@@ -16,6 +16,10 @@ function makePr(number: number, state: string, linkedIssues: number[]): PullRequ
   return { repoFullName: "owner/repo", number, title: `PR ${number}`, state, labels: [], linkedIssues };
 }
 
+// "inherit" (no per-repo override) preserves every existing test's semantics below unchanged -- the flag alone
+// governs, exactly as before duplicateWinnerMode existed.
+const settings = { duplicateWinnerMode: undefined };
+
 /** Stub fetch so any /pulls/{n} returns the mapped live state; an unmapped path 404s (→ undefined live state). */
 function stubLiveStates(states: Record<number, string>): void {
   vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
@@ -44,7 +48,7 @@ describe("reconcileLiveDuplicateSiblings (#dup-winner / audit #15)", () => {
     });
     const siblings = [makePr(5, "open", [1])];
     const pr = makePr(9, "open", [1]);
-    expect(await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings)).toBe(siblings);
+    expect(await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings, settings)).toBe(siblings);
   });
 
   it("flag ON but the PR links no issue ⇒ unchanged (no cluster to adjudicate)", async () => {
@@ -52,7 +56,7 @@ describe("reconcileLiveDuplicateSiblings (#dup-winner / audit #15)", () => {
     env.LOOPOVER_DUPLICATE_WINNER = "true";
     const siblings = [makePr(5, "open", [1])];
     const pr = makePr(9, "open", []);
-    expect(await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings)).toBe(siblings);
+    expect(await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings, settings)).toBe(siblings);
   });
 
   it("flag ON, a higher overlapping sibling LIVE-closed ⇒ dropped because claim-time election lets higher numbers demote", async () => {
@@ -61,7 +65,7 @@ describe("reconcileLiveDuplicateSiblings (#dup-winner / audit #15)", () => {
     stubLiveStates({ 12: "closed" });
     const siblings = [makePr(12, "open", [1])];
     const pr = makePr(9, "open", [1]);
-    const result = await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings);
+    const result = await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings, settings);
     expect(result.map((p) => p.number)).toEqual([]);
   });
 
@@ -71,7 +75,7 @@ describe("reconcileLiveDuplicateSiblings (#dup-winner / audit #15)", () => {
     stubLiveStates({ 12: "open" });
     const siblings = [makePr(12, "open", [1])];
     const pr = makePr(9, "open", [1]);
-    const result = await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings);
+    const result = await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings, settings);
     expect(result.map((p) => p.number)).toEqual([12]);
   });
 
@@ -80,7 +84,7 @@ describe("reconcileLiveDuplicateSiblings (#dup-winner / audit #15)", () => {
     env.LOOPOVER_DUPLICATE_WINNER = "true";
     const siblings = [makePr(12, "open", [2])];
     const pr = makePr(9, "open", [1]);
-    expect(await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings)).toBe(siblings);
+    expect(await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings, settings)).toBe(siblings);
   });
 
   it("flag ON, a sibling already cached non-open ⇒ unchanged (the cache already excludes it)", async () => {
@@ -88,7 +92,7 @@ describe("reconcileLiveDuplicateSiblings (#dup-winner / audit #15)", () => {
     env.LOOPOVER_DUPLICATE_WINNER = "true";
     const siblings = [makePr(5, "closed", [1])];
     const pr = makePr(9, "open", [1]);
-    expect(await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings)).toBe(siblings);
+    expect(await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings, settings)).toBe(siblings);
   });
 
   it("flag ON, a lower overlapping sibling LIVE-closed ⇒ dropped so the remaining open cluster is adjudicated from live members", async () => {
@@ -97,7 +101,7 @@ describe("reconcileLiveDuplicateSiblings (#dup-winner / audit #15)", () => {
     stubLiveStates({ 5: "closed" });
     const siblings = [makePr(5, "open", [1])];
     const pr = makePr(9, "open", [1]);
-    const result = await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings);
+    const result = await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings, settings);
     expect(result.map((p) => p.number)).toEqual([]);
   });
 
@@ -107,7 +111,7 @@ describe("reconcileLiveDuplicateSiblings (#dup-winner / audit #15)", () => {
     stubLiveStates({ 5: "open" });
     const siblings = [makePr(5, "open", [1])];
     const pr = makePr(9, "open", [1]);
-    const result = await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings);
+    const result = await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings, settings);
     expect(result.map((p) => p.number)).toEqual([5]);
   });
 
@@ -117,7 +121,7 @@ describe("reconcileLiveDuplicateSiblings (#dup-winner / audit #15)", () => {
     stubLiveStates({}); // every /pulls/{n} 404s ⇒ undefined live state
     const siblings = [makePr(5, "open", [1])];
     const pr = makePr(9, "open", [1]);
-    const result = await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings);
+    const result = await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings, settings);
     expect(result.map((p) => p.number)).toEqual([5]);
   });
 
@@ -127,7 +131,7 @@ describe("reconcileLiveDuplicateSiblings (#dup-winner / audit #15)", () => {
     stubLiveStates({ 4: "closed", 12: "open" });
     const siblings = [makePr(4, "open", [1]), makePr(12, "open", [1])];
     const pr = makePr(9, "open", [1]);
-    const result = await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings);
+    const result = await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings, settings);
     expect(result.map((p) => p.number)).toEqual([12]);
   });
 
@@ -138,7 +142,7 @@ describe("reconcileLiveDuplicateSiblings (#dup-winner / audit #15)", () => {
     stubLiveStates({ 5: "closed" });
     const siblings = [makePr(5, "open", [1])];
     const pr = makePr(9, "open", [1]);
-    const result = await reconcileLiveDuplicateSiblings(env, 4242, "owner/repo", pr, siblings);
+    const result = await reconcileLiveDuplicateSiblings(env, 4242, "owner/repo", pr, siblings, settings);
     expect(mockedToken).toHaveBeenCalledWith(env, 4242);
     expect(result.map((p) => p.number)).toEqual([]);
   });
@@ -150,8 +154,29 @@ describe("reconcileLiveDuplicateSiblings (#dup-winner / audit #15)", () => {
     stubLiveStates({ 5: "closed" });
     const siblings = [makePr(5, "open", [1])];
     const pr = makePr(9, "open", [1]);
-    const result = await reconcileLiveDuplicateSiblings(env, 4242, "owner/repo", pr, siblings);
+    const result = await reconcileLiveDuplicateSiblings(env, 4242, "owner/repo", pr, siblings, settings);
     expect(mockedToken).toHaveBeenCalledWith(env, 4242);
     expect(result.map((p) => p.number)).toEqual([]);
+  });
+
+  it("regression: a per-repo duplicateWinnerMode: \"enabled\" override reconciles even when the global flag is off", async () => {
+    const env = createTestEnv();
+    env.LOOPOVER_DUPLICATE_WINNER = "false";
+    stubLiveStates({ 5: "closed" });
+    const siblings = [makePr(5, "open", [1])];
+    const pr = makePr(9, "open", [1]);
+    const result = await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings, { duplicateWinnerMode: "enabled" });
+    expect(result.map((p) => p.number)).toEqual([]);
+  });
+
+  it("regression: a per-repo duplicateWinnerMode: \"off\" override returns the cached list untouched even when the global flag is on", async () => {
+    const env = createTestEnv();
+    env.LOOPOVER_DUPLICATE_WINNER = "true";
+    vi.stubGlobal("fetch", async () => {
+      throw new Error("fetch must not be called when the repo has opted out");
+    });
+    const siblings = [makePr(5, "open", [1])];
+    const pr = makePr(9, "open", [1]);
+    expect(await reconcileLiveDuplicateSiblings(env, null, "owner/repo", pr, siblings, { duplicateWinnerMode: "off" })).toBe(siblings);
   });
 });

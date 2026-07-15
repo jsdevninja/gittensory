@@ -348,6 +348,12 @@ export type RepositorySettings = {
    *  self-host operator's `LOOPOVER_SKIP_AUTOMATION_BOT_PRS` global default (itself default-ON); `"off"`/
    *  `"enabled"` override that default in either direction for this repo. */
   skipAutomationBotAuthors?: "inherit" | "off" | "enabled" | undefined;
+  /** Duplicate-winner adjudication (#dup-winner): when several OPEN PRs link the same issue, the legacy
+   *  behavior closes EVERY sibling as a duplicate. With this active, exactly one winner (the earliest
+   *  claimant) is spared. `"inherit"` defers to the `LOOPOVER_DUPLICATE_WINNER` global env default (itself
+   *  default-OFF); `"off"`/`"enabled"` fully override the global default in either direction for this repo. No
+   *  DB column -- config-as-code only, set via `.loopover.yml settings.duplicateWinnerMode`. */
+  duplicateWinnerMode?: "inherit" | "off" | "enabled" | undefined;
   autoLabelEnabled: boolean;
   gittensorLabel: string;
   createMissingLabel: boolean;
