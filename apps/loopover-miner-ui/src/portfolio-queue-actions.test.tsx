@@ -9,6 +9,7 @@ import {
   releasePortfolioQueueItem,
   requeuePortfolioQueueItem,
   type PortfolioQueueActionItem,
+  type PortfolioQueueActionResult,
 } from "./lib/portfolio-queue-actions";
 import { PortfolioPage, PortfolioQueueActionsSection } from "./routes/portfolio";
 import type { PortfolioQueueResult } from "./lib/portfolio-queue";
@@ -45,6 +46,7 @@ describe("PortfolioQueueActionsSection (#4857)", () => {
     render(
       <PortfolioQueueActionsSection
         result={null}
+        actionResult={null}
         pending={false}
         onRelease={() => undefined}
         onRequeue={() => undefined}
@@ -57,6 +59,7 @@ describe("PortfolioQueueActionsSection (#4857)", () => {
     render(
       <PortfolioQueueActionsSection
         result={{ ok: false, error: "connection refused" }}
+        actionResult={null}
         pending={false}
         onRelease={() => undefined}
         onRequeue={() => undefined}
@@ -71,6 +74,7 @@ describe("PortfolioQueueActionsSection (#4857)", () => {
     render(
       <PortfolioQueueActionsSection
         result={{ ok: true, items: [inProgressItem, doneItem] }}
+        actionResult={null}
         pending={false}
         onRelease={onRelease}
         onRequeue={onRequeue}
@@ -86,12 +90,28 @@ describe("PortfolioQueueActionsSection (#4857)", () => {
     render(
       <PortfolioQueueActionsSection
         result={{ ok: true, items: [inProgressItem] }}
+        actionResult={null}
         pending={true}
         onRelease={() => undefined}
         onRequeue={() => undefined}
       />,
     );
     expect((screen.getByRole("button", { name: "Release" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("renders a visible error when a queue action fails (#6090)", () => {
+    const failed: PortfolioQueueActionResult = { ok: false, error: "queue_entry_not_in_progress" };
+    render(
+      <PortfolioQueueActionsSection
+        result={{ ok: true, items: [inProgressItem] }}
+        actionResult={failed}
+        pending={false}
+        onRelease={() => undefined}
+        onRequeue={() => undefined}
+      />,
+    );
+    expect(screen.getByRole("alert").textContent).toContain("queue_entry_not_in_progress");
+    expect(screen.getByRole("button", { name: "Release" })).toBeTruthy();
   });
 });
 
@@ -115,6 +135,28 @@ describe("PortfolioPage queue actions (#4857)", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Release" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Release" }));
     await waitFor(() => expect(releaseItem).toHaveBeenCalledWith(inProgressItem));
+  });
+
+  it("REGRESSION (#6090): a failing release action renders the error and does not re-fetch items as if it succeeded", async () => {
+    const loadPortfolioQueueItems = vi.fn(async () => ({ ok: true as const, items: [inProgressItem] }));
+    const releaseItem = vi.fn(async (): Promise<PortfolioQueueActionResult> => ({
+      ok: false,
+      error: "queue_entry_not_in_progress",
+    }));
+    render(
+      <PortfolioPage
+        loadPortfolioQueue={loadPortfolioQueue}
+        loadPortfolioQueueItems={loadPortfolioQueueItems}
+        releaseItem={releaseItem}
+        pollIntervalMs={60_000}
+      />,
+    );
+    await waitFor(() => expect(screen.getByRole("button", { name: "Release" })).toBeTruthy());
+    expect(loadPortfolioQueueItems).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Release" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("queue_entry_not_in_progress"));
+    expect(releaseItem).toHaveBeenCalledWith(inProgressItem);
+    expect(loadPortfolioQueueItems).toHaveBeenCalledTimes(1);
   });
 });
 

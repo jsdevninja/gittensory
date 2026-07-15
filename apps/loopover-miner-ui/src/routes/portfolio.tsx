@@ -9,8 +9,10 @@ import {
   fetchPortfolioQueueItems,
   requeuePortfolioQueueItem,
   releasePortfolioQueueItem,
+  type PortfolioQueueActionItem,
+  type PortfolioQueueActionResult,
+  type PortfolioQueueItemsResult,
 } from "../lib/portfolio-queue-actions";
-import type { PortfolioQueueActionItem, PortfolioQueueItemsResult } from "../lib/portfolio-queue-actions";
 import { DEFAULT_POLL_INTERVAL_MS, usePolledFetch } from "../lib/use-polled-fetch";
 import { fetchPortfolioQueue, type PortfolioQueueResult, type QueueStatus } from "../lib/portfolio-queue";
 
@@ -94,11 +96,13 @@ export function PortfolioQueueView({ result }: { result: PortfolioQueueResult | 
 
 export function PortfolioQueueActionsSection({
   result,
+  actionResult,
   pending,
   onRelease,
   onRequeue,
 }: {
   result: PortfolioQueueItemsResult | null;
+  actionResult: PortfolioQueueActionResult | null;
   pending: boolean;
   onRelease: (item: PortfolioQueueActionItem) => void;
   onRequeue: (item: PortfolioQueueActionItem) => void;
@@ -106,6 +110,11 @@ export function PortfolioQueueActionsSection({
   return (
     <section className="grid gap-3">
       <h3 className="font-display text-token-base font-semibold">Queue actions</h3>
+      {actionResult !== null && !actionResult.ok ? (
+        <p role="alert" className="text-token-sm text-[var(--danger)]">
+          Queue action failed: {actionResult.error}
+        </p>
+      ) : null}
       {result === null ? (
         <p className="text-token-sm text-muted-foreground">Loading actionable queue items…</p>
       ) : !result.ok ? (
@@ -168,6 +177,7 @@ export function PortfolioPage({
   const [refreshKey, setRefreshKey] = useState(0);
   const [actionPending, setActionPending] = useState(false);
   const [itemsResult, setItemsResult] = useState<PortfolioQueueItemsResult | null>(null);
+  const [actionResult, setActionResult] = useState<PortfolioQueueActionResult | null>(null);
 
   const loadSummary = useCallback(() => loadPortfolioQueue(), [loadPortfolioQueue, refreshKey]);
   const summaryResult = usePolledFetch(loadSummary, pollIntervalMs);
@@ -180,11 +190,14 @@ export function PortfolioPage({
     refreshItems();
   }, [refreshItems]);
 
-  const runQueueAction = (action: () => Promise<unknown>) => {
+  const runQueueAction = (action: () => Promise<PortfolioQueueActionResult>) => {
     setActionPending(true);
-    void action().then(() => {
-      setRefreshKey((key) => key + 1);
-      refreshItems();
+    void action().then((next) => {
+      setActionResult(next);
+      if (next.ok) {
+        setRefreshKey((key) => key + 1);
+        refreshItems();
+      }
       setActionPending(false);
     });
   };
@@ -202,6 +215,7 @@ export function PortfolioPage({
           <PortfolioQueueView result={summaryResult} />
           <PortfolioQueueActionsSection
             result={itemsResult}
+            actionResult={actionResult}
             pending={actionPending}
             onRelease={(item) => runQueueAction(() => releaseItem(item))}
             onRequeue={(item) => runQueueAction(() => requeueItem(item))}
