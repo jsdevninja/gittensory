@@ -54,7 +54,7 @@ See [Tuning your reviews](https://gittensory.aethereal.dev/docs/tuning) for the 
 | ------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Miners and contributors   | [Quickstart](https://gittensory.aethereal.dev/docs/quickstart)           | [MCP client setup](https://gittensory.aethereal.dev/docs/mcp-clients), [Miner workflow](https://gittensory.aethereal.dev/docs/miner-workflow), [Scoreability](https://gittensory.aethereal.dev/docs/scoreability) |
 | Maintainers               | [GitHub App](https://gittensory.aethereal.dev/docs/github-app)           | [Maintainer workflow](https://gittensory.aethereal.dev/docs/maintainer-workflow), [Self-host reviews](https://gittensory.aethereal.dev/docs/maintainer-self-hosting), [Privacy and security](https://gittensory.aethereal.dev/docs/privacy-security)                         |
-| Repo owners and operators | [Beta onboarding](https://gittensory.aethereal.dev/docs/beta-onboarding) | [Upstream drift](https://gittensory.aethereal.dev/docs/upstream-drift), [Troubleshooting](https://gittensory.aethereal.dev/docs/troubleshooting), [Roadmap](https://gittensory.aethereal.dev/roadmap)             |
+| Repo owners and operators | [Beta onboarding](https://gittensory.aethereal.dev/docs/beta-onboarding) | [ORB + AMS together](ORB_AMS_QUICKSTART.md), [Upstream drift](https://gittensory.aethereal.dev/docs/upstream-drift), [Troubleshooting](https://gittensory.aethereal.dev/docs/troubleshooting), [Roadmap](https://gittensory.aethereal.dev/roadmap) |
 | Agent authors             | [Agents](https://gittensory.aethereal.dev/agents)                        | [API browser](https://gittensory.aethereal.dev/api), [MCP client setup](https://gittensory.aethereal.dev/docs/mcp-clients)                                                                                        |
 
 ## Surfaces
@@ -66,6 +66,7 @@ See [Tuning your reviews](https://gittensory.aethereal.dev/docs/tuning) for the 
 | MCP package       | [@loopover/mcp](https://www.npmjs.com/package/@loopover/mcp)                                               |
 | Engine package    | [`@loopover/engine`](packages/loopover-engine/README.md) — shared deterministic logic for the review stack and miner |
 | Miner package     | [`@loopover/miner`](packages/loopover-miner/README.md) — local foundation CLI for the autonomous miner runtime        |
+| ORB + AMS (self-host) | [`ORB_AMS_QUICKSTART.md`](ORB_AMS_QUICKSTART.md) — run root `docker-compose.yml` and AMS fleet/laptop on one host |
 | API               | [API browser](https://gittensory.aethereal.dev/api) and [OpenAPI JSON](https://gittensory-api.aethereal.dev/openapi.json)          |
 | GitHub App        | [Setup docs](https://gittensory.aethereal.dev/docs/github-app) — self-hosting is the only currently available path |
 | Browser extension | [Extension page](https://gittensory.aethereal.dev/extension)                                                                       |
@@ -96,6 +97,10 @@ loopover-mcp agent plan --login jsonbored --json
 loopover-mcp agent packet --login jsonbored --json
 loopover-mcp agent status <run-id> --json
 ```
+
+## Running ORB + AMS together
+
+Self-host the review stack (ORB, root [`docker-compose.yml`](docker-compose.yml)) and the autonomous miner (AMS) on one machine — including the Grafana `ams-observability` bridge for fleet or laptop mode — with the copy-pasteable path in [`ORB_AMS_QUICKSTART.md`](ORB_AMS_QUICKSTART.md). AMS-only laptop/fleet details remain in [`packages/loopover-miner/DEPLOYMENT.md`](packages/loopover-miner/DEPLOYMENT.md).
 
 ## Local Development
 

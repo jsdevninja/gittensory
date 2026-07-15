@@ -163,7 +163,7 @@ See [`docs/cross-repo-discovery-phase1.md`](docs/cross-repo-discovery-phase1.md)
 
 See [`docs/discovery-plane-operator-guide.md`](docs/discovery-plane-operator-guide.md) for the optional hosted discovery-index plane (opt-in default OFF; contrasts with Orb's opt-out-only export — [#4309](https://github.com/JSONbored/gittensory/issues/4309)).
 
-See [`DEPLOYMENT.md`](DEPLOYMENT.md) for laptop vs fleet deployment.
+See [`DEPLOYMENT.md`](DEPLOYMENT.md) for laptop vs fleet deployment. To run AMS alongside the self-hosted ORB compose stack (including Grafana `ams-observability`), see the repo-root [`ORB_AMS_QUICKSTART.md`](../../ORB_AMS_QUICKSTART.md).
 
 See [`docs/operations-runbook.md`](docs/operations-runbook.md) for SQLite concurrency guarantees, corruption recovery, multi-process collision response, and post-upgrade ledger migration ([#4875](https://github.com/JSONbored/gittensory/issues/4875)).
 

@@ -137,9 +137,11 @@ docker compose -f docker-compose.miner.yml up -d --build
 
 ### Running fleet mode alongside ORB's `ams-observability` profile
 
+For the full dual-product operator path (ORB + AMS env files, laptop vs fleet, and Grafana verification), start at the repo-root [`ORB_AMS_QUICKSTART.md`](../../ORB_AMS_QUICKSTART.md). The rest of this section is the AMS-side bridge detail.
+
 Fleet mode keeps miner state in a named `miner-data` volume, but ORB's `ams-reporting-exporter` (root [`docker-compose.yml`](../../docker-compose.yml), `--profile ams-observability`) reads the miner's ledgers from a **host** directory (default `~/.config/loopover-miner`). A named volume's host path is a Docker-managed internal detail, so the two never line up on their own — the exporter reads an empty directory and the Grafana AMS datasources stay **silently empty**.
 
-To bridge them, relocate the fleet miner's state onto a host directory with the opt-in override, then run both profiles together:
+To bridge them, relocate the fleet miner's state onto a host directory with the opt-in override, then run both profiles together (add `--profile observability` when you also want Grafana up in the same invoke — see the quickstart):
 
 ```sh
 cp packages/loopover-miner/docker-compose.miner.override.yml.example \
