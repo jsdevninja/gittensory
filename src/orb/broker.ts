@@ -116,7 +116,7 @@ async function readCachedOrbToken(env: Env, cachedJson: string | null): Promise<
     // failure class (a malformed entry or a decrypt failure, e.g. after TOKEN_ENCRYPTION_SECRET rotation) at
     // warn. Without this, a rotated/mismatched key makes every cached-token read fail permanently and silently,
     // degrading every broker call to a full GitHub token mint forever with zero signal anywhere.
-    console.warn(JSON.stringify({ level: "warn", event: "orb_token_cache_read_failed", message: error instanceof Error ? error.message : String(error).slice(0, 120) }));
+    console.warn(JSON.stringify({ level: "warn", event: "orb_token_cache_read_failed", message: String(error).slice(0, 120) }));
     return null;
   }
 }

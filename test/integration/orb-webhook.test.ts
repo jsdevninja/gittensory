@@ -59,7 +59,7 @@ describe("handleOrbWebhook (POST /v1/orb/webhook)", () => {
     // recorded on the row, so the failure reaches Sentry/Loki instead of only being visible via a DB query.
     const logged = errors.mock.calls.map((c) => String(c[0])).find((line) => line.includes("orb_webhook_processing_failed"));
     expect(logged).toBeDefined();
-    expect(JSON.parse(logged!)).toMatchObject({ level: "error", event: "orb_webhook_processing_failed", deliveryId: "up-err", eventName: "installation", installationId: 42, message: "boom" });
+    expect(JSON.parse(logged!)).toMatchObject({ level: "error", event: "orb_webhook_processing_failed", deliveryId: "up-err", eventName: "installation", installationId: 42, message: "Error: boom" });
     errors.mockRestore();
   });
 

@@ -205,7 +205,7 @@ describe("exportOrbBatch() — always-on; reads review_audit, ships anonymized r
     expect(await renderMetrics()).toContain("loopover_orb_export_errors_total");
     const logged = errors.mock.calls.map((c) => String(c[0])).find((line) => line.includes("orb_export_failed"));
     expect(logged).toBeDefined();
-    expect(JSON.parse(logged!)).toMatchObject({ level: "error", event: "orb_export_failed", message: "ECONNREFUSED" });
+    expect(JSON.parse(logged!)).toMatchObject({ level: "error", event: "orb_export_failed", message: "Error: ECONNREFUSED" });
     errors.mockRestore();
   });
 
