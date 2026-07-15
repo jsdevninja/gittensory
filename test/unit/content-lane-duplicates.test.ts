@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildContentDuplicateReview,
+  contentSignalSourceFromDirectoryEntry,
   directoryIndexToSignals,
   extractContentDuplicateSignals,
   findContentDuplicateMatch,
@@ -872,5 +873,24 @@ describe("per-repo ContentRepoSpec override (a self-hosted curated list re-param
     const signals = directoryIndexToSignals(entries);
     expect(signals[0]?.urls).toEqual(["https://github.com/acme/foo", "https://acme.example"]);
     expect(signals[0]?.urls).not.toContain("https://should-not-appear.example");
+  });
+
+  it("contentSignalSourceFromDirectoryEntry defaults spec to AWESOME_CLAUDE_CONTENT_SPEC and skips empty URL values (#5941)", () => {
+    // One-arg call covers the default-parameter branch; empty-string githubUrl covers the falsy `if (value)` arm.
+    const synthesized = contentSignalSourceFromDirectoryEntry({
+      category: "skills",
+      slug: "foo",
+      title: "Foo",
+      description: "d",
+      githubUrl: "",
+      websiteUrl: "https://acme.example",
+    });
+    expect(synthesized).toContain('websiteUrl: "https://acme.example"');
+    expect(synthesized).not.toContain("githubUrl:");
+    const viaDefaultSpec = extractContentDuplicateSignals({
+      filePath: "content/skills/foo.mdx",
+      content: synthesized,
+    });
+    expect(viaDefaultSpec.urls).toEqual(["https://acme.example"]);
   });
 });

@@ -537,8 +537,10 @@ function yamlScalar(value: unknown): string {
  * URL lines come from `spec.urlFields` (not a hardcoded list) so they agree with
  * `extractContentDuplicateSignals`'s filtering — custom ContentRepoSpec URL keys must
  * reach the synthesized frontmatter or corpus `urls` stay silently empty (#5941).
+ *
+ * Exported for unit tests so the default-`spec` parameter branch is exercised (#5941 Codecov).
  */
-function contentSignalSourceFromDirectoryEntry(
+export function contentSignalSourceFromDirectoryEntry(
   entry: DirectoryIndexEntry,
   spec: ContentRepoSpec = AWESOME_CLAUDE_CONTENT_SPEC,
 ): string {
