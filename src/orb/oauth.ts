@@ -22,7 +22,7 @@ type GitHubOrgMembership = { role?: string; state?: string; organization?: { id?
 
 /** Exchange the OAuth code for the maintainer's access token using the ORB App's OAuth credentials. Null when the
  *  credentials aren't configured or GitHub returns no token. */
-export async function exchangeOrbOAuthCode(env: Env, code: string, fetchImpl: typeof fetch = fetch): Promise<string | null> {
+export async function exchangeOrbOAuthCode(env: Env, code: string, fetchImpl: typeof fetch = timeoutFetch): Promise<string | null> {
   if (!env.ORB_GITHUB_CLIENT_ID || !env.ORB_GITHUB_CLIENT_SECRET) return null;
   const res = await fetchImpl("https://github.com/login/oauth/access_token", {
     method: "POST",

@@ -2208,6 +2208,18 @@ describe("queue processors", () => {
     backfillSpy.mockRestore();
   });
 
+  it("REGRESSION: logs a structured error when the brokered installed-repos sync fails, instead of discarding the failure silently", async () => {
+    const env = createTestEnv({ ORB_ENROLLMENT_SECRET: "orb-secret" });
+    vi.stubGlobal("fetch", async () => new Response("nope", { status: 403 }));
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await processJob(env, { type: "sync-brokered-installed-repos", requestedBy: "schedule" });
+
+    const logged = errors.mock.calls.map((c) => String(c[0])).find((line) => line.includes("orb_installed_repos_sync_failed"));
+    expect(logged).toBeDefined();
+    expect(JSON.parse(logged!)).toMatchObject({ level: "error", event: "orb_installed_repos_sync_failed", reason: expect.stringContaining("403") });
+  });
+
   it("REGRESSION: scheduled sweeps refresh stale open-PR rows so missed webhooks cannot hide PRs from repair", async () => {
     const sent: import("../../src/types").JobMessage[] = [];
     const env = createTestEnv({

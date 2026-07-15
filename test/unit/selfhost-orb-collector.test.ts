@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { createD1Adapter, nodeSqliteDriver } from "../../src/selfhost/d1-adapter";
 import { bucketReasonCode, exportOrbBatch, getOrCreateAnonSecret } from "../../src/selfhost/orb-collector";
 import { resetMetrics, renderMetrics } from "../../src/selfhost/metrics";
@@ -185,16 +185,40 @@ describe("exportOrbBatch() — always-on; reads review_audit, ships anonymized r
     const db = makeDb();
     await audit(db, "o/r", 1, "gate_decision", "merge", "2026-01-01T00:00:00Z");
     await audit(db, "o/r", 1, "pr_outcome", "merged", "2026-01-01T01:00:00Z");
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
     expect(await exportOrbBatch(db, 200, async () => new Response(null, { status: 503 }))).toBe(0);
     expect(await renderMetrics()).toContain("loopover_orb_export_errors_total");
+    // REGRESSION: was silent beyond the counter -- now logs a structured error so a failing export tick reaches
+    // Sentry/Loki instead of being indistinguishable from "nothing new to export" in either tool.
+    const logged = errors.mock.calls.map((c) => String(c[0])).find((line) => line.includes("orb_export_failed"));
+    expect(logged).toBeDefined();
+    expect(JSON.parse(logged!)).toMatchObject({ level: "error", event: "orb_export_failed", status: 503 });
+    errors.mockRestore();
   });
 
   it("returns 0 + increments error counter when the collector is unreachable", async () => {
     const db = makeDb();
     await audit(db, "o/r", 1, "gate_decision", "merge", "2026-01-01T00:00:00Z");
     await audit(db, "o/r", 1, "pr_outcome", "merged", "2026-01-01T01:00:00Z");
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
     expect(await exportOrbBatch(db, 200, async () => { throw new Error("ECONNREFUSED"); })).toBe(0);
     expect(await renderMetrics()).toContain("loopover_orb_export_errors_total");
+    const logged = errors.mock.calls.map((c) => String(c[0])).find((line) => line.includes("orb_export_failed"));
+    expect(logged).toBeDefined();
+    expect(JSON.parse(logged!)).toMatchObject({ level: "error", event: "orb_export_failed", message: "ECONNREFUSED" });
+    errors.mockRestore();
+  });
+
+  it("REGRESSION: the export POST carries a bounded timeout, so a wedged collector connection cannot hang the hourly tick forever", async () => {
+    const db = makeDb();
+    await audit(db, "o/r", 1, "gate_decision", "merge", "2026-01-01T00:00:00Z");
+    await audit(db, "o/r", 1, "pr_outcome", "merged", "2026-01-01T01:00:00Z");
+    let seenSignal: AbortSignal | undefined;
+    await exportOrbBatch(db, 200, async (_url, init) => {
+      seenSignal = init?.signal ?? undefined;
+      return new Response(null, { status: 200 });
+    });
+    expect(seenSignal).toBeInstanceOf(AbortSignal);
   });
 
   it("signs the batch and respects batchSize", async () => {

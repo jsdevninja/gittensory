@@ -101,6 +101,7 @@ export const DEFAULT_METRIC_META: readonly (readonly [string, MetricMeta])[] = [
   ["loopover_rag_pipeline_errors_total", { help: "RAG index-population pipeline errors (repo/path indexing), by op.", type: "counter" }],
   ["loopover_orb_events_exported_total", { help: "Orb events exported from the self-host runtime.", type: "counter" }],
   ["loopover_orb_export_errors_total", { help: "Orb event export errors.", type: "counter" }],
+  ["loopover_orb_installed_repos_sync_failures_total", { help: "Brokered installed-repos sync failures (broker/GitHub errors during the cron sync).", type: "counter" }],
   ["loopover_orb_relay_drains_total", { help: "Orb relay drain outcomes.", type: "counter" }],
   ["loopover_orb_relay_drain_skipped_total", { help: "Pull-mode orb relay drain ticks skipped because the previous tick was still in flight.", type: "counter" }],
   ["loopover_orb_relay_register_consecutive_failures", { help: "Current consecutive orb relay registration failure streak, reset to 0 on any success.", type: "gauge" }],

@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../../src/api/routes";
 import { handleOrbWebhook } from "../../src/orb/webhook";
 import { createTestEnv, type TestD1Database } from "../helpers/d1";
@@ -50,10 +50,17 @@ describe("handleOrbWebhook (POST /v1/orb/webhook)", () => {
       prepare: (sql: string) =>
         sql.includes("orb_github_installations") ? { bind: () => ({ run: () => Promise.reject(new Error("boom")) }) } : real.prepare(sql),
     };
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const res = await post(e, INSTALL, { delivery: "up-err" });
     expect(res.status).toBe(500);
     const stored = await (real as unknown as TestD1Database).prepare("SELECT status FROM orb_webhook_events WHERE delivery_id=?").bind("up-err").first<{ status: string }>();
     expect(stored?.status).toBe("error"); // not suppressed → GitHub can retry
+    // REGRESSION: was silent beyond the DB row -- now logs a structured error with the same identifying fields
+    // recorded on the row, so the failure reaches Sentry/Loki instead of only being visible via a DB query.
+    const logged = errors.mock.calls.map((c) => String(c[0])).find((line) => line.includes("orb_webhook_processing_failed"));
+    expect(logged).toBeDefined();
+    expect(JSON.parse(logged!)).toMatchObject({ level: "error", event: "orb_webhook_processing_failed", deliveryId: "up-err", eventName: "installation", installationId: 42, message: "boom" });
+    errors.mockRestore();
   });
 
   it("400 when the GitHub delivery or event header is missing", async () => {

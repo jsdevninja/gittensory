@@ -111,7 +111,12 @@ async function readCachedOrbToken(env: Env, cachedJson: string | null): Promise<
     if (!(Date.parse(entry.expiresAt) - Date.now() >= ORB_TOKEN_CACHE_MIN_REMAINING_MS)) return null;
     const token = await decryptSecret(entry.ciphertext, entry.iv, env.TOKEN_ENCRYPTION_SECRET, entry.salt);
     return { token, expiresAt: entry.expiresAt, permissions: entry.permissions ?? {} };
-  } catch {
+  } catch (error) {
+    // Was silent, unlike this function's mirror-image sibling cacheOrbToken (below), which logs the identical
+    // failure class (a malformed entry or a decrypt failure, e.g. after TOKEN_ENCRYPTION_SECRET rotation) at
+    // warn. Without this, a rotated/mismatched key makes every cached-token read fail permanently and silently,
+    // degrading every broker call to a full GitHub token mint forever with zero signal anywhere.
+    console.warn(JSON.stringify({ level: "warn", event: "orb_token_cache_read_failed", message: error instanceof Error ? error.message : String(error).slice(0, 120) }));
     return null;
   }
 }

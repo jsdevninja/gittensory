@@ -33,6 +33,7 @@ import { isRagEnabled } from "../review/rag-wire";
 import { processSubmitDraft } from "../services/draft";
 import { retryFailedRelays } from "../orb/relay";
 import { syncBrokeredInstalledRepos } from "../orb/installed-repos-sync";
+import { incr } from "../selfhost/metrics";
 import { generateSignalSnapshots } from "./signal-snapshot";
 import { runRetentionPrune } from "./retention";
 // The 15 handlers below have no reason to move -- each is only reachable via this dispatcher (or, for
@@ -70,9 +71,18 @@ export async function processJob(env: Env, message: JobMessage): Promise<void> {
     case "refresh-registry":
       await refreshRegistry(env);
       return;
-    case "sync-brokered-installed-repos":
-      await syncBrokeredInstalledRepos(env);
+    case "sync-brokered-installed-repos": {
+      const syncResult = await syncBrokeredInstalledRepos(env);
+      // syncBrokeredInstalledRepos is deliberately fail-safe (never throws -- a miss self-heals on the next
+      // scheduled tick), which also means this call site is the ONLY place a failure can ever become visible.
+      // Previously the result was discarded outright, so a sustained broker/GitHub outage here silently stopped
+      // repo-list convergence with zero signal in Sentry, Loki, or Prometheus.
+      if (syncResult.status === "failed") {
+        incr("loopover_orb_installed_repos_sync_failures_total");
+        console.error(JSON.stringify({ level: "error", event: "orb_installed_repos_sync_failed", reason: syncResult.reason }));
+      }
       return;
+    }
     case "backfill-registered-repos":
       if (!message.repoFullName && message.requestedBy !== "test") {
         // #5021 retargeted the two downstream entry points (backfillRegisteredRepositories,

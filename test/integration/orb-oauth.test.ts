@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../../src/api/routes";
+import * as githubClientModule from "../../src/github/client";
 import { exchangeOrbOAuthCode, fetchOrbOAuthUser, verifyInstallationAdmin } from "../../src/orb/oauth";
 import { createTestEnv, type TestD1Database } from "../helpers/d1";
 
@@ -86,6 +87,14 @@ describe("exchangeOrbOAuthCode + fetchOrbOAuthUser", () => {
   it("user fetch returns the user on ok, null on a non-ok / loginless response", async () => {
     expect(await fetchOrbOAuthUser("t", asFetch(async () => Response.json({ login: "alice", id: 1 })))).toEqual({ login: "alice", id: 1 });
     expect(await fetchOrbOAuthUser("t", asFetch(async () => new Response("no", { status: 401 })))).toBeNull();
+  });
+
+  it("REGRESSION: defaults to the bounded timeoutFetch, not raw fetch, matching its two siblings above (fetchOrbOAuthUser/verifyInstallationAdmin already did)", async () => {
+    const timeoutFetchSpy = vi.spyOn(githubClientModule, "timeoutFetch").mockResolvedValue(Response.json({ access_token: "ghu_x" }));
+    const env = { ORB_GITHUB_CLIENT_ID: "id", ORB_GITHUB_CLIENT_SECRET: "sec" } as Env;
+    expect(await exchangeOrbOAuthCode(env, "c")).toBe("ghu_x"); // no explicit fetchImpl -- exercises the default
+    expect(timeoutFetchSpy).toHaveBeenCalledWith("https://github.com/login/oauth/access_token", expect.objectContaining({ method: "POST" }));
+    timeoutFetchSpy.mockRestore();
   });
 });
 

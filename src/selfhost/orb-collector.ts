@@ -210,13 +210,21 @@ export async function exportOrbBatch(db: D1Database, batchSize = 200, fetchFn: t
         ...(collectorToken ? { authorization: `Bearer ${collectorToken}` } : {}),
       },
       body,
+      // Matches every other broker HTTP call in this subsystem (drainOrbRelay's 30s, fetchAllInstallationRepos's
+      // 20s) -- an unbounded await here could hang the whole hourly export tick forever on a wedged connection.
+      signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) {
       incr("loopover_orb_export_errors_total");
+      console.error(JSON.stringify({ level: "error", event: "orb_export_failed", status: res.status }));
       return 0;
     }
-  } catch {
+  } catch (error) {
+    // Was silent beyond the counter -- this catch also swallows the error rather than rethrowing, so
+    // withSentryMonitor's own capture (wrapping this call in monitored-work.ts) never sees it either; a hung/
+    // failed export tick was previously indistinguishable from "nothing new to export" in both Sentry and Loki.
     incr("loopover_orb_export_errors_total");
+    console.error(JSON.stringify({ level: "error", event: "orb_export_failed", message: error instanceof Error ? error.message : String(error).slice(0, 200) }));
     return 0;
   }
 

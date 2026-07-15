@@ -118,10 +118,15 @@ describe("brokerOrbToken", () => {
     await seedInstall(e, 304, { registered: 1 });
     const { secret } = (await issueOrbEnrollment(e, 304)) as { secret: string };
     const fetchCalls = countingTokenFetch("2026-06-25T08:00:00Z");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     expect(await brokerOrbToken(e, secret)).toMatchObject({ token: "ghs_minted_1" });
     await db(e).prepare("UPDATE orb_enrollments SET cached_token_json = ? WHERE installation_id = 304").bind(JSON.stringify({ ciphertext: "bad", iv: "bad", salt: null, expiresAt: "2026-06-25T08:00:00Z" })).run();
     expect(await brokerOrbToken(e, secret)).toMatchObject({ token: "ghs_minted_2" });
+    // REGRESSION: the unreadable-cache decrypt failure above was silent -- now logs a structured warning (matching
+    // cacheOrbToken's own write-failure log below), so a rotated/mismatched TOKEN_ENCRYPTION_SECRET is visible
+    // instead of silently degrading every broker call to a full re-mint forever.
+    expect(warn.mock.calls.map((c) => String(c[0])).some((line) => line.includes("orb_token_cache_read_failed"))).toBe(true);
     await db(e).prepare("UPDATE orb_enrollments SET cached_token_json = ? WHERE installation_id = 304").bind(JSON.stringify({ ciphertext: "bad", iv: "bad", salt: null, expiresAt: "2026-06-25T07:05:00Z" })).run();
     expect(await brokerOrbToken(e, secret)).toMatchObject({ token: "ghs_minted_3" });
     expect(fetchCalls()).toBe(3);

@@ -73,7 +73,11 @@ export async function handleOrbWebhook(c: Context<{ Bindings: Env }>): Promise<R
   try {
     await upsertOrbInstallation(c.env, eventName, payload);
     await recordOrbPrOutcome(c.env, eventName, payload);
-  } catch {
+  } catch (error) {
+    // Was silent (a status:"error" DB row only, no log) unlike this same subsystem's other broker-error catches
+    // (orb_broker_mint_failed, orb_relay_register_failed, orb_relay_pull_failed in src/api/routes.ts), which all
+    // log a structured error so the failure reaches Sentry/Loki instead of only being visible via a DB query.
+    console.error(JSON.stringify({ level: "error", event: "orb_webhook_processing_failed", ...eventMeta, message: error instanceof Error ? error.message : String(error).slice(0, 200) }));
     await recordOrbWebhookEvent(c.env, { ...eventMeta, status: "error" });
     return c.json({ error: "processing_failed", deliveryId }, 500);
   }
