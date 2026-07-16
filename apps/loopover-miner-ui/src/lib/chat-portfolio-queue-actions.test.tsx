@@ -72,9 +72,15 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function isolatedRegistry() {
-  const actions = new Map<string, { paramsValidator: (params: unknown) => boolean; handler: (request: unknown) => Promise<unknown> }>();
+  const actions = new Map<
+    string,
+    { paramsValidator: (params: unknown) => boolean; handler: (request: unknown) => Promise<unknown> }
+  >();
   return {
-    register(name: string, definition: { paramsValidator: (params: unknown) => boolean; handler: (request: unknown) => Promise<unknown> }) {
+    register(
+      name: string,
+      definition: { paramsValidator: (params: unknown) => boolean; handler: (request: unknown) => Promise<unknown> },
+    ) {
       actions.set(name, definition);
       return definition;
     },
@@ -107,7 +113,14 @@ describe("resolvePortfolioQueueChatAction (#6520)", () => {
   });
 
   it("rejects empty, action-less, dual-action, and repo-less text without guessing", () => {
-    for (const text of ["", "   ", "status please", "release something", "release and requeue acme/widgets", "requeued acme/widgets"]) {
+    for (const text of [
+      "",
+      "   ",
+      "status please",
+      "release something",
+      "release and requeue acme/widgets",
+      "requeued acme/widgets",
+    ]) {
       const result = resolvePortfolioQueueChatAction(text);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.message).toMatch(/Couldn't determine/i);
@@ -118,20 +131,38 @@ describe("resolvePortfolioQueueChatAction (#6520)", () => {
 describe("matchPortfolioQueueChatTarget (#6520)", () => {
   it("matches release to in_progress and requeue to done", () => {
     const items = { ok: true as const, items: [inProgressItem, doneItem] };
-    expect(matchPortfolioQueueChatTarget(PORTFOLIO_QUEUE_CHAT_RELEASE_ACTION, { repoFullName: "acme/widgets" }, items)).toEqual({
+    expect(
+      matchPortfolioQueueChatTarget(PORTFOLIO_QUEUE_CHAT_RELEASE_ACTION, { repoFullName: "acme/widgets" }, items),
+    ).toEqual({
       ok: true,
       item: inProgressItem,
     });
-    expect(matchPortfolioQueueChatTarget(PORTFOLIO_QUEUE_CHAT_REQUEUE_ACTION, { repoFullName: "acme/widgets", identifier: "issue:7" }, items)).toEqual({
+    expect(
+      matchPortfolioQueueChatTarget(
+        PORTFOLIO_QUEUE_CHAT_REQUEUE_ACTION,
+        { repoFullName: "acme/widgets", identifier: "issue:7" },
+        items,
+      ),
+    ).toEqual({
       ok: true,
       item: doneItem,
     });
   });
 
   it("rejects items-API errors, zero matches, and ambiguous multi-matches", () => {
-    expect(matchPortfolioQueueChatTarget(PORTFOLIO_QUEUE_CHAT_RELEASE_ACTION, { repoFullName: "acme/widgets" }, { ok: false, error: "down" }).ok).toBe(false);
     expect(
-      matchPortfolioQueueChatTarget(PORTFOLIO_QUEUE_CHAT_RELEASE_ACTION, { repoFullName: "acme/widgets" }, { ok: true, items: [doneItem] }).ok,
+      matchPortfolioQueueChatTarget(
+        PORTFOLIO_QUEUE_CHAT_RELEASE_ACTION,
+        { repoFullName: "acme/widgets" },
+        { ok: false, error: "down" },
+      ).ok,
+    ).toBe(false);
+    expect(
+      matchPortfolioQueueChatTarget(
+        PORTFOLIO_QUEUE_CHAT_RELEASE_ACTION,
+        { repoFullName: "acme/widgets" },
+        { ok: true, items: [doneItem] },
+      ).ok,
     ).toBe(false);
     const twin: PortfolioQueueActionItem = { ...inProgressItem, identifier: "issue:99" };
     const ambiguous = matchPortfolioQueueChatTarget(
@@ -264,7 +295,11 @@ describe("handlePortfolioQueueChatCommand (#6520)", () => {
   it("reports disabled when the scaffolding flag is off (still after a successful resolve+match)", async () => {
     const registry = isolatedRegistry();
     registerPortfolioQueueChatActions({ registry: registry as never, evaluateGate: allowGate });
-    dispatchChatAction.mockResolvedValue({ ok: false, status: "disabled", action: PORTFOLIO_QUEUE_CHAT_RELEASE_ACTION });
+    dispatchChatAction.mockResolvedValue({
+      ok: false,
+      status: "disabled",
+      action: PORTFOLIO_QUEUE_CHAT_RELEASE_ACTION,
+    });
 
     const result = await handlePortfolioQueueChatCommand("release acme/widgets", {
       env: {},
@@ -339,7 +374,12 @@ describe("formatPortfolioQueueChatResultMessage + MessageList (#6520)", () => {
         timestamp: "2026-07-16T09:00:00.000Z",
         action: PORTFOLIO_QUEUE_CHAT_RELEASE_ACTION,
         item: inProgressItem,
-        dispatch: { ok: true, status: "dispatched", action: PORTFOLIO_QUEUE_CHAT_RELEASE_ACTION, result: { ok: true, status: "executed" } },
+        dispatch: {
+          ok: true,
+          status: "dispatched",
+          action: PORTFOLIO_QUEUE_CHAT_RELEASE_ACTION,
+          result: { ok: true, status: "executed" },
+        },
       }).content,
     ).toMatch(/Queue release dispatched for acme\/widgets/);
   });

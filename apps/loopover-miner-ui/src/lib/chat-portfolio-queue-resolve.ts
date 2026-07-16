@@ -7,8 +7,7 @@ export const PORTFOLIO_QUEUE_CHAT_RELEASE_ACTION = "portfolio.release";
 export const PORTFOLIO_QUEUE_CHAT_REQUEUE_ACTION = "portfolio.requeue";
 
 export type PortfolioQueueChatActionName =
-  | typeof PORTFOLIO_QUEUE_CHAT_RELEASE_ACTION
-  | typeof PORTFOLIO_QUEUE_CHAT_REQUEUE_ACTION;
+  typeof PORTFOLIO_QUEUE_CHAT_RELEASE_ACTION | typeof PORTFOLIO_QUEUE_CHAT_REQUEUE_ACTION;
 
 /** Fields the dispatch handler needs; `apiBaseUrl` is filled in after matching a live queue item. */
 export type PortfolioQueueChatActionTarget = {
@@ -32,7 +31,7 @@ const REPO_RE = /\b([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)\b/;
 const IDENTIFIER_RE = /\b(?:issue:(\d+)|#(\d+)|(?<![A-Za-z0-9._/-])(\d+)(?![A-Za-z0-9._/-]))\b/i;
 
 const UNRESOLVABLE =
-  "Couldn't determine a portfolio-queue action. Say something like \"release owner/repo\" or \"requeue owner/repo #12\".";
+  'Couldn\'t determine a portfolio-queue action. Say something like "release owner/repo" or "requeue owner/repo #12".';
 
 /**
  * Resolve chat text to a portfolio release/requeue request. Does NOT call the dispatch layer — an

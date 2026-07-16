@@ -31,11 +31,7 @@ import {
   type PortfolioQueueItemsResult,
 } from "./portfolio-queue-actions";
 
-export {
-  PORTFOLIO_QUEUE_CHAT_RELEASE_ACTION,
-  PORTFOLIO_QUEUE_CHAT_REQUEUE_ACTION,
-  resolvePortfolioQueueChatAction,
-};
+export { PORTFOLIO_QUEUE_CHAT_RELEASE_ACTION, PORTFOLIO_QUEUE_CHAT_REQUEUE_ACTION, resolvePortfolioQueueChatAction };
 
 export type PortfolioQueueChatParams = {
   repoFullName: string;
@@ -93,7 +89,8 @@ export function registerPortfolioQueueChatActions(options: RegisterPortfolioQueu
   });
 
   const register = options.registry
-    ? (name: string, definition: Parameters<ChatActionRegistry["register"]>[1]) => options.registry!.register(name, definition)
+    ? (name: string, definition: Parameters<ChatActionRegistry["register"]>[1]) =>
+        options.registry!.register(name, definition)
     : registerChatAction;
 
   register(PORTFOLIO_QUEUE_CHAT_RELEASE_ACTION, definitionFor(releaseHandler));
@@ -108,8 +105,7 @@ export function resetPortfolioQueueChatActionsRegistrationForTest(): void {
 }
 
 export type MatchPortfolioQueueChatTargetResult =
-  | { ok: true; item: PortfolioQueueActionItem }
-  | { ok: false; message: string };
+  { ok: true; item: PortfolioQueueActionItem } | { ok: false; message: string };
 
 /**
  * Match a resolved chat target against live actionable queue items. Release only matches `in_progress`;
