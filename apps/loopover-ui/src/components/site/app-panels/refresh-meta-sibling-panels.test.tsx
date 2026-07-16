@@ -118,7 +118,9 @@ describe("RefreshMeta adoption on sibling panels (#6181)", () => {
       data: {
         status: "ready",
         login: "miner",
-        nextActions: [{ actionKind: "open_pr", rationale: "Ship the fix.", repoFullName: "acme/widgets" }],
+        nextActions: [
+          { actionKind: "open_pr", rationale: "Ship the fix.", repoFullName: "acme/widgets" },
+        ],
         blockers: [],
         projections: [],
         repoFit: [],
