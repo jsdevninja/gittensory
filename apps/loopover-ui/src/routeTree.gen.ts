@@ -62,6 +62,7 @@ import { Route as DocsAmsSizingRouteImport } from './routes/docs.ams-sizing'
 import { Route as DocsAmsOperationsRunbookRouteImport } from './routes/docs.ams-operations-runbook'
 import { Route as DocsAmsObservabilityRouteImport } from './routes/docs.ams-observability'
 import { Route as DocsAmsGoalSpecRouteImport } from './routes/docs.ams-goal-spec'
+import { Route as DocsAmsFleetManifestRouteImport } from './routes/docs.ams-fleet-manifest'
 import { Route as DocsAmsEnvReferenceRouteImport } from './routes/docs.ams-env-reference'
 import { Route as DocsAmsDiscoveryPlaneRouteImport } from './routes/docs.ams-discovery-plane'
 import { Route as DocsAmsDeploymentRouteImport } from './routes/docs.ams-deployment'
@@ -364,6 +365,11 @@ const DocsAmsGoalSpecRoute = DocsAmsGoalSpecRouteImport.update({
   path: '/ams-goal-spec',
   getParentRoute: () => DocsRoute,
 } as any)
+const DocsAmsFleetManifestRoute = DocsAmsFleetManifestRouteImport.update({
+  id: '/ams-fleet-manifest',
+  path: '/ams-fleet-manifest',
+  getParentRoute: () => DocsRoute,
+} as any)
 const DocsAmsEnvReferenceRoute = DocsAmsEnvReferenceRouteImport.update({
   id: '/ams-env-reference',
   path: '/ams-env-reference',
@@ -495,6 +501,7 @@ export interface FileRoutesByFullPath {
   '/docs/ams-deployment': typeof DocsAmsDeploymentRoute
   '/docs/ams-discovery-plane': typeof DocsAmsDiscoveryPlaneRoute
   '/docs/ams-env-reference': typeof DocsAmsEnvReferenceRoute
+  '/docs/ams-fleet-manifest': typeof DocsAmsFleetManifestRoute
   '/docs/ams-goal-spec': typeof DocsAmsGoalSpecRoute
   '/docs/ams-observability': typeof DocsAmsObservabilityRoute
   '/docs/ams-operations-runbook': typeof DocsAmsOperationsRunbookRoute
@@ -567,6 +574,7 @@ export interface FileRoutesByTo {
   '/docs/ams-deployment': typeof DocsAmsDeploymentRoute
   '/docs/ams-discovery-plane': typeof DocsAmsDiscoveryPlaneRoute
   '/docs/ams-env-reference': typeof DocsAmsEnvReferenceRoute
+  '/docs/ams-fleet-manifest': typeof DocsAmsFleetManifestRoute
   '/docs/ams-goal-spec': typeof DocsAmsGoalSpecRoute
   '/docs/ams-observability': typeof DocsAmsObservabilityRoute
   '/docs/ams-operations-runbook': typeof DocsAmsOperationsRunbookRoute
@@ -643,6 +651,7 @@ export interface FileRoutesById {
   '/docs/ams-deployment': typeof DocsAmsDeploymentRoute
   '/docs/ams-discovery-plane': typeof DocsAmsDiscoveryPlaneRoute
   '/docs/ams-env-reference': typeof DocsAmsEnvReferenceRoute
+  '/docs/ams-fleet-manifest': typeof DocsAmsFleetManifestRoute
   '/docs/ams-goal-spec': typeof DocsAmsGoalSpecRoute
   '/docs/ams-observability': typeof DocsAmsObservabilityRoute
   '/docs/ams-operations-runbook': typeof DocsAmsOperationsRunbookRoute
@@ -720,6 +729,7 @@ export interface FileRouteTypes {
     | '/docs/ams-deployment'
     | '/docs/ams-discovery-plane'
     | '/docs/ams-env-reference'
+    | '/docs/ams-fleet-manifest'
     | '/docs/ams-goal-spec'
     | '/docs/ams-observability'
     | '/docs/ams-operations-runbook'
@@ -792,6 +802,7 @@ export interface FileRouteTypes {
     | '/docs/ams-deployment'
     | '/docs/ams-discovery-plane'
     | '/docs/ams-env-reference'
+    | '/docs/ams-fleet-manifest'
     | '/docs/ams-goal-spec'
     | '/docs/ams-observability'
     | '/docs/ams-operations-runbook'
@@ -867,6 +878,7 @@ export interface FileRouteTypes {
     | '/docs/ams-deployment'
     | '/docs/ams-discovery-plane'
     | '/docs/ams-env-reference'
+    | '/docs/ams-fleet-manifest'
     | '/docs/ams-goal-spec'
     | '/docs/ams-observability'
     | '/docs/ams-operations-runbook'
@@ -1300,6 +1312,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsAmsGoalSpecRouteImport
       parentRoute: typeof DocsRoute
     }
+    '/docs/ams-fleet-manifest': {
+      id: '/docs/ams-fleet-manifest'
+      path: '/ams-fleet-manifest'
+      fullPath: '/docs/ams-fleet-manifest'
+      preLoaderRoute: typeof DocsAmsFleetManifestRouteImport
+      parentRoute: typeof DocsRoute
+    }
     '/docs/ams-env-reference': {
       id: '/docs/ams-env-reference'
       path: '/ams-env-reference'
@@ -1497,6 +1516,7 @@ interface DocsRouteChildren {
   DocsAmsDeploymentRoute: typeof DocsAmsDeploymentRoute
   DocsAmsDiscoveryPlaneRoute: typeof DocsAmsDiscoveryPlaneRoute
   DocsAmsEnvReferenceRoute: typeof DocsAmsEnvReferenceRoute
+  DocsAmsFleetManifestRoute: typeof DocsAmsFleetManifestRoute
   DocsAmsGoalSpecRoute: typeof DocsAmsGoalSpecRoute
   DocsAmsObservabilityRoute: typeof DocsAmsObservabilityRoute
   DocsAmsOperationsRunbookRoute: typeof DocsAmsOperationsRunbookRoute
@@ -1546,6 +1566,7 @@ const DocsRouteChildren: DocsRouteChildren = {
   DocsAmsDeploymentRoute: DocsAmsDeploymentRoute,
   DocsAmsDiscoveryPlaneRoute: DocsAmsDiscoveryPlaneRoute,
   DocsAmsEnvReferenceRoute: DocsAmsEnvReferenceRoute,
+  DocsAmsFleetManifestRoute: DocsAmsFleetManifestRoute,
   DocsAmsGoalSpecRoute: DocsAmsGoalSpecRoute,
   DocsAmsObservabilityRoute: DocsAmsObservabilityRoute,
   DocsAmsOperationsRunbookRoute: DocsAmsOperationsRunbookRoute,

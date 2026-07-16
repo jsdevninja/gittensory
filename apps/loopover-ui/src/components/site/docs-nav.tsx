@@ -84,6 +84,7 @@ export const docsNav: DocsGroup[] = [
           { to: "/docs/ams-env-reference", label: "Env var reference" },
           { to: "/docs/ams-discovery-plane", label: "Discovery plane (opt-in)" },
           { to: "/docs/ams-goal-spec", label: "Miner goal spec" },
+          { to: "/docs/ams-fleet-manifest", label: "Fleet run-manifest" },
         ],
       },
     ],

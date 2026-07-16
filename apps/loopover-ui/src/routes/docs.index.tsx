@@ -82,6 +82,7 @@ const AUDIENCES: Audience[] = [
       { to: "/docs/ams-env-reference", label: "Env var reference" },
       { to: "/docs/ams-discovery-plane", label: "Discovery plane (opt-in)" },
       { to: "/docs/ams-goal-spec", label: "Miner goal spec" },
+      { to: "/docs/ams-fleet-manifest", label: "Fleet run-manifest" },
       { to: "/docs/self-hosting-docs-audit", label: "Self-host docs audit" },
       { to: "/docs/maintainer-install-trust", label: "Install & trust guide" },
       { to: "/docs/github-app", label: "GitHub App configuration" },

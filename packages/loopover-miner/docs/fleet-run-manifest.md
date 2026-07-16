@@ -1,5 +1,9 @@
 # Fleet run-manifest
 
+> Also published on the docs website: [Fleet run-manifest](https://loopover.ai/docs/ams-fleet-manifest)
+> (same content, rendered with search and the rest of the maintainer docs nav). This file remains
+> the canonical source and ships inside the published `@loopover/miner` package.
+
 The **fleet run-manifest** is the top-level config a *fleet operator* authors to run the miner across many repos
 at once: it declares which repos are in scope for a fleet run and how a finite worktree/concurrency budget is
 split between them. It is parsed by `parseFleetRunManifestContent` / `parseFleetRunManifest` in
