@@ -2,7 +2,7 @@ import { DEFAULT_FORGE_CONFIG } from "./forge-config.js";
 import { normalizeLocalStoreDbPath, openLocalStoreDb, resolveLocalStoreDbPath } from "./local-store.js";
 
 // Governor cross-attempt state persistence (#5134, Wave 3.5). Every governor-*.js wrapper
-// (governor-write-rate-limit.js, governor-chokepoint.js) is a pure in/out transform: it computes and RETURNS
+// (governor-chokepoint.js) is a pure in/out transform: it computes and RETURNS
 // updated rate-limit buckets/backoff attempts, but nothing writes them to disk, so they reset to zero on
 // every process start -- the mutable counters that should gate the NEXT decision never survive past one
 // process. governor-ledger.js already persists the DECISION HISTORY (an append-only audit log); this module
