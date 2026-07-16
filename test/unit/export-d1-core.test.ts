@@ -37,11 +37,47 @@ describe("export-d1-core redaction (#selfhost-migration)", () => {
       auth_sessions: ["token_hash"],
       webhook_events: ["payload_hash"],
       repository_ai_keys: ["ciphertext"],
+      repository_linear_keys: ["ciphertext"],
+      auth_session_github_tokens: ["ciphertext", "refresh_ciphertext"],
       submission_user_tokens: ["encrypted_token"],
       orb_enrollments: ["secret_hash", "relay_secret_enc", "relay_secret_iv", "relay_secret_salt", "cached_token_json"],
     });
     expect(redactRow("webhook_events", { delivery_id: "d1", payload_hash: "h" })).toEqual({ delivery_id: "d1" });
     expect(redactRow("repository_ai_keys", { repo_full_name: "o/r", ciphertext: "ENCRYPTED" })).toEqual({ repo_full_name: "o/r" });
+  });
+
+  // Schema isolates these ciphertext columns specifically so they are NEVER serialized (#6295). Keep an
+  // explicit allowlist here rather than parsing schema comments (comment phrasing drifts); when a new
+  // never-serialize ciphertext table lands, add it to both REDACTED_COLUMNS and this list.
+  it("redacts every schema-isolated never-serialize ciphertext table", () => {
+    const neverSerializeCiphertextColumns: Record<string, string[]> = {
+      repository_ai_keys: ["ciphertext"],
+      repository_linear_keys: ["ciphertext"],
+      auth_session_github_tokens: ["ciphertext", "refresh_ciphertext"],
+    };
+    for (const [table, columns] of Object.entries(neverSerializeCiphertextColumns)) {
+      expect(REDACTED_COLUMNS[table]).toEqual(columns);
+    }
+
+    const linearExport = buildTableExport("repository_linear_keys", [
+      { repo_full_name: "o/r", ciphertext: "LEAK_LINEAR_CIPHERTEXT", iv: "iv", last4: "abcd" },
+    ]);
+    expect(linearExport?.redactedColumns).toEqual(["ciphertext"]);
+    expect(linearExport?.rows).toEqual([{ repo_full_name: "o/r", iv: "iv", last4: "abcd" }]);
+
+    const sessionTokenExport = buildTableExport("auth_session_github_tokens", [
+      {
+        session_id: "s1",
+        ciphertext: "LEAK_SESSION_GITHUB_CIPHERTEXT",
+        iv: "iv",
+        refresh_ciphertext: "LEAK_SESSION_GITHUB_REFRESH_CIPHERTEXT",
+        refresh_iv: "riv",
+      },
+    ]);
+    expect(sessionTokenExport?.redactedColumns).toEqual(["ciphertext", "refresh_ciphertext"]);
+    expect(sessionTokenExport?.rows).toEqual([{ session_id: "s1", iv: "iv", refresh_iv: "riv" }]);
+
+    expect(JSON.stringify([linearExport, sessionTokenExport])).not.toMatch(/LEAK_/);
   });
 
   it("redacts draft OAuth and Orb secret material from self-host exports (regression)", () => {

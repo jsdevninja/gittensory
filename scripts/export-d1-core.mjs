@@ -25,6 +25,9 @@ export const EXCLUDED_TABLES = new Set([
 //   • auth_sessions.token_hash                 — hashed browser session tokens, scoped to the cloud deploy.
 //   • webhook_events.payload_hash              — per-delivery dedup hash, scoped to the cloud deploy.
 //   • repository_ai_keys.ciphertext            — maintainer BYOK provider keys, encrypted with the cloud key.
+//   • repository_linear_keys.ciphertext        — Linear API keys; same never-serialize envelope as AI keys (#6295).
+//   • auth_session_github_tokens.ciphertext /  — per-session GitHub OAuth envelopes; isolated so a full-row
+//     refresh_ciphertext                         serialize can't leak them (#6295 / #6114).
 //   • submission_user_tokens.encrypted_token   — short-lived GitHub OAuth token envelopes, cloud-scoped.
 //   • orb_enrollments.secret_hash              — one-time enrollment secret hashes.
 //   • orb_enrollments.relay_secret_*           — encrypted relay webhook signing secret material.
@@ -33,6 +36,8 @@ export const REDACTED_COLUMNS = {
   auth_sessions: ["token_hash"],
   webhook_events: ["payload_hash"],
   repository_ai_keys: ["ciphertext"],
+  repository_linear_keys: ["ciphertext"],
+  auth_session_github_tokens: ["ciphertext", "refresh_ciphertext"],
   submission_user_tokens: ["encrypted_token"],
   orb_enrollments: ["secret_hash", "relay_secret_enc", "relay_secret_iv", "relay_secret_salt", "cached_token_json"],
 };
