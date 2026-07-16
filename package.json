@@ -168,12 +168,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/JSONbored/gittensory.git"
+    "url": "git+https://github.com/JSONbored/loopover.git"
   },
   "keywords": [],
   "author": "",
   "bugs": {
-    "url": "https://github.com/JSONbored/gittensory/issues"
+    "url": "https://github.com/JSONbored/loopover/issues"
   },
-  "homepage": "https://github.com/JSONbored/gittensory#readme"
+  "homepage": "https://github.com/JSONbored/loopover#readme"
 }

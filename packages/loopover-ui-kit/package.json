@@ -6,12 +6,12 @@
   "description": "Shared design-system tokens and component primitives for gittensory-ui and gittensory-miner-ui.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/JSONbored/gittensory.git",
+    "url": "git+https://github.com/JSONbored/loopover.git",
     "directory": "packages/loopover-ui-kit"
   },
-  "homepage": "https://github.com/JSONbored/gittensory#readme",
+  "homepage": "https://github.com/JSONbored/loopover#readme",
   "bugs": {
-    "url": "https://github.com/JSONbored/gittensory/issues"
+    "url": "https://github.com/JSONbored/loopover/issues"
   },
   "keywords": [
     "gittensory",
