@@ -412,7 +412,7 @@ export function buildPreflightResult(
       action: maintainerAuthored ? "No action." : "Refresh registry data or choose a registered active repo.",
     });
   }
-  if (linkedIssues.length === 0 && lane.lane !== "issue_discovery") {
+  if (linkedIssues.length === 0 && lane.lane !== "issue_discovery" && !hasClearNoIssueRationale({ title: input.title, body: input.body })) {
     findings.push({
       code: "missing_linked_issue",
       severity: "warning",

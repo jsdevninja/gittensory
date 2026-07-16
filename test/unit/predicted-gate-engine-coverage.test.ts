@@ -360,6 +360,25 @@ describe("predicted-gate engine module coverage (#2283)", () => {
     expect(observed.findings.some((f) => f.code === "missing_linked_issue")).toBe(true);
   });
 
+  it("REGRESSION (#6628): predicted preflight honors a clear no-issue rationale like the live gate", () => {
+    const docsOnly = buildPreflightResult(
+      { repoFullName: REPO.fullName, title: "docs-only: fix typo", body: "", linkedIssues: [] },
+      REPO,
+      [],
+      [],
+    );
+    expect(docsOnly.lane.lane).not.toBe("issue_discovery");
+    expect(docsOnly.findings.some((finding) => finding.code === "missing_linked_issue")).toBe(false);
+
+    const unexplained = buildPreflightResult(
+      { repoFullName: REPO.fullName, title: "Fix upload behavior", body: "", linkedIssues: [] },
+      REPO,
+      [],
+      [],
+    );
+    expect(unexplained.findings.some((finding) => finding.code === "missing_linked_issue")).toBe(true);
+  });
+
   it("exercises gate holds, readiness score branches, and linked-issue advisory paths", () => {
     const advisory = buildPullRequestAdvisory(REPO, PR, { requireLinkedIssue: true, confirmedNoOpenLinkedIssue: true, linkedIssueAuthorLogins: ["miner1"] });
     expect(advisory.findings.some((f) => f.code === "missing_linked_issue")).toBe(true);
