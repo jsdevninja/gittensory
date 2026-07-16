@@ -39,14 +39,45 @@ import { resolveRepositorySettings } from "../settings/repository-settings";
 import { loadGatePrecisionReport, type GatePrecisionReport } from "../services/gate-precision";
 import { buildRepoOutcomeCalibration, type OutcomeCalibration } from "../services/outcome-calibration";
 import { triggerPagerDutyIncident, type PagerDutySeverity } from "../services/notify-pagerduty";
+import { loadRepoFocusManifest } from "../signals/focus-manifest-loader";
+import { resolveLoopOverSelfRepoFullName } from "../config/loopover-repo-focus-manifest";
 import { errorMessage, nowIso } from "../utils/json";
 
-/** True when the ops observability surface is enabled. Flag-OFF (default) → every export below is a no-op /
- *  404. Truthy follows the codebase convention (`/^(1|true|yes|on)$/i`, same as isSafetyEnabled). */
-export function isOpsEnabled(env: {
-  LOOPOVER_REVIEW_OPS?: string | undefined;
-}): boolean {
+/** A manifest-sourced enable override (#6275) -- the `ops` block of the loopover self-repo's `.loopover.yml`
+ *  (see FocusManifestOpsConfig). `present: false` (no block, or the repo has no manifest at all) means "no
+ *  override configured", not "disabled" -- the caller falls through to the env var in that case, exactly as
+ *  if this parameter were omitted. Mirrors MaintainerRecapManifestOverride (maintainer-recap-wire.ts). */
+export type OpsManifestOverride = { present: boolean; enabled: boolean };
+
+/** True when the ops observability surface is enabled. Config-as-code (#6275): a present `ops` manifest
+ *  block on the loopover self-repo wins outright; otherwise falls back to the LOOPOVER_REVIEW_OPS env flag
+ *  (default OFF -- every export below is a no-op / 404). Truthy env convention matches isSafetyEnabled. */
+export function isOpsEnabled(
+  env: { LOOPOVER_REVIEW_OPS?: string | undefined },
+  manifestOverride?: OpsManifestOverride | undefined,
+): boolean {
+  if (manifestOverride?.present) return manifestOverride.enabled;
   return /^(1|true|yes|on)$/i.test((env.LOOPOVER_REVIEW_OPS ?? "").trim());
+}
+
+/**
+ * Config-as-code override lookup (#6275): read the `ops` block off the loopover self-repo's
+ * `.loopover.yml` (resolveLoopOverSelfRepoFullName) -- ops-alert scanning is a fleet-wide, operator-level
+ * setting, not a per-repo one (there is no repo context at either call site's activation check), so ONE
+ * designated repo's manifest stands in for "the operator's own config", the same way maintainerRecap
+ * (#2250) already does for the cross-repo recap digest. A manifest load failure (network blip, malformed
+ * YAML) degrades to `{ present: false }` -- the caller then falls through to the env var, exactly as if no
+ * override existed, so a manifest hiccup can never accidentally enable or disable the scan.
+ */
+export async function resolveOpsManifestOverride(env: Env): Promise<OpsManifestOverride> {
+  try {
+    const manifest = await loadRepoFocusManifest(env, resolveLoopOverSelfRepoFullName(env));
+    const config = manifest.ops;
+    return { present: config.present, enabled: config.enabled };
+  } catch (error) {
+    console.warn(JSON.stringify({ event: "ops_manifest_override_error", message: errorMessage(error).slice(0, 200) }));
+    return { present: false, enabled: false };
+  }
 }
 
 // ── Anomaly thresholds (gittensory-native; conservative so a handful of samples never cries wolf) ──────────
