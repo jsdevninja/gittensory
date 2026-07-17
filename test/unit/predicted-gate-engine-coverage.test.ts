@@ -27,7 +27,7 @@ import {
 } from "../../packages/loopover-engine/src/signals/change-guardrail";
 import { isDuplicateClusterWinnerByClaim, resolveDuplicateClusterWinnerNumber } from "../../packages/loopover-engine/src/signals/duplicate-winner";
 import { buildCollisionReport, buildPreflightResult, buildPublicReadinessScore, buildQueueHealth, classifyBountyLifecycle, itemSharesPlannedLinkedIssue, predictedGateEngineInternals, termOverlap, unionScopedOverlapClusters } from "../../packages/loopover-engine/src/signals/predicted-gate-engine";
-import type { CollisionItem, FocusManifest, IssueQualityReport, PreMergeCheck, PullRequestRecord, RepositoryRecord } from "../../packages/loopover-engine/src/types/predicted-gate-types";
+import type { CollisionItem, FocusManifest, FocusManifestGuidance, IssueQualityReport, PreMergeCheck, PullRequestRecord, RepositoryRecord } from "../../packages/loopover-engine/src/types/predicted-gate-types";
 
 const REPO: RepositoryRecord = {
   fullName: "acme/widgets",
@@ -299,6 +299,67 @@ describe("predicted-gate engine module coverage (#2283)", () => {
     // Still real, deduped, positive issue numbers — the cap truncates, it doesn't corrupt.
     expect(new Set(preflight.linkedIssues).size).toBe(50);
     expect(preflight.linkedIssues.every((n) => Number.isInteger(n) && n > 0)).toBe(true);
+  });
+
+  it("never leaks public-unsafe wantedPaths/preferredLabels into contributor-facing guidance (#6770)", () => {
+    // wantedPaths and preferredLabels are freeform maintainer-authored text that is never public-safety-checked
+    // at parse time, so buildFocusManifestGuidance must filter them before interpolating them into a finding.
+    const manifest: FocusManifest = {
+      present: true,
+      source: "repo_file",
+      wantedPaths: ["src/reward-payouts/**", "/home/maintainer/secret/**"],
+      preferredLabels: ["trust-score", "hotkey-rotation"],
+      linkedIssuePolicy: "optional",
+      testExpectations: [],
+      issueDiscoveryPolicy: "neutral",
+      maintainerNotes: [],
+      publicNotes: [],
+      gate: { present: true } as FocusManifest["gate"],
+      settings: {},
+      review: { present: true, preMergeChecks: [] },
+      warnings: [],
+    };
+    const forbidden = ["reward-payouts", "/home/maintainer", "trust-score", "hotkey-rotation"];
+    const surfaceOf = (guidance: FocusManifestGuidance): string =>
+      JSON.stringify([guidance.findings, guidance.publicNextSteps, guidance.summary]);
+
+    // Every manifest entry is unsafe here, so each filtered list is empty -> the zero-safe fallback arms fire.
+    const offFocus = buildFocusManifestGuidance({ manifest, changedPaths: ["docs/readme.md"], labels: [], linkedIssueCount: 1, testFileCount: 1 });
+    expect(offFocus.findings.some((f) => f.code === "manifest_off_focus")).toBe(true);
+    expect(offFocus.findings.find((f) => f.code === "manifest_off_focus")?.detail).toBe(
+      "No changed path matches the maintainer-wanted patterns.",
+    );
+    expect(offFocus.findings.find((f) => f.code === "manifest_missing_preferred_label")?.detail).toBe(
+      "No maintainer-preferred label applied.",
+    );
+    expect(offFocus.publicNextSteps).toContain("Consider applying a maintainer-preferred label so triage stays aligned.");
+    for (const term of forbidden) expect(surfaceOf(offFocus)).not.toContain(term);
+
+    // A matched-but-unsafe wanted path must not reach manifest_preferred_path's detail either.
+    const matchedUnsafe = buildFocusManifestGuidance({ manifest, changedPaths: ["src/reward-payouts/a.ts"], labels: [], linkedIssueCount: 1, testFileCount: 1 });
+    expect(matchedUnsafe.matchedWantedPaths.length).toBeGreaterThan(0);
+    expect(matchedUnsafe.findings.find((f) => f.code === "manifest_preferred_path")?.detail).toBe(
+      "Changed paths match the maintainer-wanted patterns.",
+    );
+    for (const term of forbidden) expect(surfaceOf(matchedUnsafe)).not.toContain(term);
+
+    // Safe entries survive: the filter must drop only the unsafe ones, not the whole list.
+    const mixed: FocusManifest = { ...manifest, wantedPaths: ["src/api/**", "src/reward-payouts/**"], preferredLabels: ["bug", "trust-score"] };
+    const mixedOffFocus = buildFocusManifestGuidance({ manifest: mixed, changedPaths: ["docs/readme.md"], labels: [], linkedIssueCount: 1, testFileCount: 1 });
+    expect(mixedOffFocus.findings.find((f) => f.code === "manifest_off_focus")?.detail).toBe(
+      "No changed path matches the maintainer-wanted patterns (src/api/**).",
+    );
+    expect(mixedOffFocus.findings.find((f) => f.code === "manifest_missing_preferred_label")?.detail).toBe(
+      "Maintainer prefers labels: bug.",
+    );
+    expect(mixedOffFocus.publicNextSteps).toContain("Consider a maintainer-preferred label (bug).");
+    for (const term of forbidden) expect(surfaceOf(mixedOffFocus)).not.toContain(term);
+
+    const mixedMatched = buildFocusManifestGuidance({ manifest: mixed, changedPaths: ["src/api/a.ts", "src/reward-payouts/b.ts"], labels: [], linkedIssueCount: 1, testFileCount: 1 });
+    expect(mixedMatched.findings.find((f) => f.code === "manifest_preferred_path")?.detail).toBe(
+      "Changed paths match maintainer-wanted patterns: src/api/**.",
+    );
+    for (const term of forbidden) expect(surfaceOf(mixedMatched)).not.toContain(term);
   });
 
   it("exercises manifest globstar path matching", () => {

@@ -152,35 +152,63 @@ export function buildFocusManifestGuidance(args: {
   }
 
   if (manifest.wantedPaths.length > 0 && matchedWantedPaths.length === 0 && changedPaths.length > 0) {
+    // Public-safety filter before interpolation (#6770, porting the host's #5945 fix) -- mirrors
+    // safeExpectations below. manifest.wantedPaths is freeform maintainer-authored text that is never
+    // public-safety-checked at parse time; without this, an unsafe pattern leaks verbatim into a
+    // contributor-facing finding.
+    const safeWantedPaths = manifest.wantedPaths.filter(isFocusManifestPublicSafe).slice(0, 5);
+    const wantedPathsDetail = safeWantedPaths.length > 0 ? ` (${safeWantedPaths.join(", ")})` : "";
     findings.push({
       code: "manifest_off_focus",
       severity: "warning",
       title: "Change is outside maintainer-wanted areas",
-      detail: `No changed path matches the maintainer-wanted patterns (${manifest.wantedPaths.slice(0, 5).join(", ")}).`,
+      detail: `No changed path matches the maintainer-wanted patterns${wantedPathsDetail}.`,
       action: "Refocus the change onto a maintainer-wanted area or explain why this out-of-focus work is needed.",
     });
     publicNextSteps.push("Refocus onto the maintainer-wanted areas, or explain why this out-of-focus change is needed.");
   }
 
   if (matchedWantedPaths.length > 0) {
+    // Same filter (#6770): matchedWantedPaths are the manifest's own patterns that matched, so they carry the
+    // same maintainer-authored text into a public finding.
+    const safeMatchedWantedPaths = matchedWantedPaths.filter(isFocusManifestPublicSafe).slice(0, 5);
+    const matchedDetail =
+      safeMatchedWantedPaths.length > 0
+        ? `Changed paths match maintainer-wanted patterns: ${safeMatchedWantedPaths.join(", ")}.`
+        : "Changed paths match the maintainer-wanted patterns.";
     findings.push({
       code: "manifest_preferred_path",
       severity: "info",
       title: "Change aligns with maintainer-wanted areas",
-      detail: `Changed paths match maintainer-wanted patterns: ${matchedWantedPaths.slice(0, 5).join(", ")}.`,
+      detail: matchedDetail,
     });
     publicNextSteps.push("Changed paths align with the maintainer's wanted areas for this repo.");
   }
 
   if (manifest.preferredLabels.length > 0 && preferredLabelHits.length === 0) {
+    // Same filter (#6770). Unlike manifest_off_focus, this finding's ENTIRE detail is built from the label
+    // list, so a zero-safe-entries fallback needs its own sentence rather than a dropped parenthetical -- the
+    // title already says the same thing and is a static, always-public-safe string.
+    const safePreferredLabels = manifest.preferredLabels.filter(isFocusManifestPublicSafe).slice(0, 5);
+    const preferredLabelsDetail =
+      safePreferredLabels.length > 0
+        ? `Maintainer prefers labels: ${safePreferredLabels.join(", ")}.`
+        : "No maintainer-preferred label applied.";
     findings.push({
       code: "manifest_missing_preferred_label",
       severity: "info",
       title: "No maintainer-preferred label applied",
-      detail: `Maintainer prefers labels: ${manifest.preferredLabels.slice(0, 5).join(", ")}.`,
+      detail: preferredLabelsDetail,
       action: "Consider applying a maintainer-preferred label so triage stays aligned.",
     });
-    publicNextSteps.push(`Consider a maintainer-preferred label (${manifest.preferredLabels.slice(0, 3).join(", ")}).`);
+    // The trailing safeNextSteps filter below drops an unsafe entry wholesale; filter the interpolated labels
+    // here too so a safe step isn't lost just because one label was unsafe.
+    const safeStepLabels = manifest.preferredLabels.filter(isFocusManifestPublicSafe).slice(0, 3);
+    if (safeStepLabels.length > 0) {
+      publicNextSteps.push(`Consider a maintainer-preferred label (${safeStepLabels.join(", ")}).`);
+    } else {
+      publicNextSteps.push("Consider applying a maintainer-preferred label so triage stays aligned.");
+    }
   }
 
   if (manifest.linkedIssuePolicy === "required" && linkedIssueCount === 0) {
