@@ -1,5 +1,71 @@
 # Changelog
 
+## [3.1.0](https://github.com/JSONbored/loopover/compare/mcp-v3.0.0...mcp-v3.1.0) (2026-07-17)
+
+
+### Features
+
+* **api:** add a REST route + CLI mirror for loopover_check_test_evidence ([#6810](https://github.com/JSONbored/loopover/issues/6810)) ([d45d8fd](https://github.com/JSONbored/loopover/commit/d45d8fd6eb12c1f85b66912097d1a562e900ad13)), closes [#6749](https://github.com/JSONbored/loopover/issues/6749)
+* **api:** add a REST route + CLI mirror for loopover_evaluate_escalation ([#6805](https://github.com/JSONbored/loopover/issues/6805)) ([f8d1628](https://github.com/JSONbored/loopover/commit/f8d1628e440211c5717b122c60f0124c563d4c92)), closes [#6754](https://github.com/JSONbored/loopover/issues/6754)
+* **api:** add a REST route + CLI mirror for loopover_get_pr_ai_review_findings ([#6676](https://github.com/JSONbored/loopover/issues/6676)) ([885336a](https://github.com/JSONbored/loopover/commit/885336a240623e56f0581f609e837cada2cbb5f0)), closes [#6619](https://github.com/JSONbored/loopover/issues/6619)
+* **api:** add a REST route + CLI mirror for loopover_simulate_open_pr_pressure ([#6915](https://github.com/JSONbored/loopover/issues/6915)) ([68b8694](https://github.com/JSONbored/loopover/commit/68b8694e278d9bb72cb78ae58a0778bd40a3be0e)), closes [#6751](https://github.com/JSONbored/loopover/issues/6751)
+* **api:** add a REST route + CLI mirror for loopover_suggest_boundary_tests ([80869bd](https://github.com/JSONbored/loopover/commit/80869bd99b08681541862392712b4511011451b5))
+* **api:** add a REST route + CLI mirror for loopover_suggest_boundary_tests ([4d5212e](https://github.com/JSONbored/loopover/commit/4d5212ed794a3a2aba6a22f4c6fcfdb6b10fee0f)), closes [#6750](https://github.com/JSONbored/loopover/issues/6750)
+* **api:** add GET /v1/repos/:owner/:repo/automation-state + CLI mirror ([#6742](https://github.com/JSONbored/loopover/issues/6742)) ([#6964](https://github.com/JSONbored/loopover/issues/6964)) ([c566906](https://github.com/JSONbored/loopover/commit/c56690697dd99c9688bfd133bdb4429f9e57eaf6))
+* **api:** add POST /v1/repos/:owner/:repo/repo-docs/refresh + CLI mirror ([#6973](https://github.com/JSONbored/loopover/issues/6973)) ([f1e9632](https://github.com/JSONbored/loopover/commit/f1e96320cb1abe2dfaed5020249f608de7c7ec38))
+* **api:** mirror loopover_propose_action to REST and the CLI ([#6744](https://github.com/JSONbored/loopover/issues/6744)) ([#7030](https://github.com/JSONbored/loopover/issues/7030)) ([a752b8f](https://github.com/JSONbored/loopover/commit/a752b8f7b9a04c37043c41ff855f18ee7eea7759))
+* **api:** REST + CLI mirror for contributor notifications ([#6745](https://github.com/JSONbored/loopover/issues/6745)) ([#7018](https://github.com/JSONbored/loopover/issues/7018)) ([447ee82](https://github.com/JSONbored/loopover/commit/447ee826553ad98ef4d8d179100196e88882d202))
+* **api:** REST + CLI mirror for loopover_build_results_payload ([#6904](https://github.com/JSONbored/loopover/issues/6904)) ([7f7ea50](https://github.com/JSONbored/loopover/commit/7f7ea500420f5cb88a073d668168f711b1fdaefd)), closes [#6752](https://github.com/JSONbored/loopover/issues/6752)
+* **api:** REST + CLI mirror for loopover_check_improvement_potential ([#6955](https://github.com/JSONbored/loopover/issues/6955)) ([27c7c59](https://github.com/JSONbored/loopover/commit/27c7c59154be89a1eed39941124a22aa34af4744))
+* **api:** REST + CLI mirror for loopover_explain_review_risk ([#6980](https://github.com/JSONbored/loopover/issues/6980)) ([#7026](https://github.com/JSONbored/loopover/issues/7026)) ([15715dc](https://github.com/JSONbored/loopover/commit/15715dc0c9bf7964964b7b22a884ec4c1a9202ae))
+* **api:** REST + CLI mirror for loopover_intake_idea ([#6916](https://github.com/JSONbored/loopover/issues/6916)) ([f1fb812](https://github.com/JSONbored/loopover/commit/f1fb81209ddbd1381982f6bfaa972f50b3a10dab)), closes [#6755](https://github.com/JSONbored/loopover/issues/6755)
+* **api:** REST + CLI mirror for loopover_pr_outcome ([#6747](https://github.com/JSONbored/loopover/issues/6747)) ([748acee](https://github.com/JSONbored/loopover/commit/748acee09f2bb097c6d80d4d054db7fcdd5b7c40))
+* **api:** REST + CLI mirror for loopover_pr_outcome ([#6747](https://github.com/JSONbored/loopover/issues/6747)) ([efbe09c](https://github.com/JSONbored/loopover/commit/efbe09c4efb37dcf2e060c141c922cb022b75595))
+* **api:** REST + stdio mirror for loopover_build_progress_snapshot ([#6943](https://github.com/JSONbored/loopover/issues/6943)) ([d6cf892](https://github.com/JSONbored/loopover/commit/d6cf8925ddffd622c91e83c25ab1079e80371484))
+* **api:** REST + stdio mirror for loopover_plan_idea_claims ([#6952](https://github.com/JSONbored/loopover/issues/6952)) ([8fa47d1](https://github.com/JSONbored/loopover/commit/8fa47d1511add3073a316a98f4f69b49767e77c1)), closes [#6756](https://github.com/JSONbored/loopover/issues/6756)
+* **mcp:** add a contributor-profile CLI command ([#6961](https://github.com/JSONbored/loopover/issues/6961)) ([484c9c8](https://github.com/JSONbored/loopover/commit/484c9c8d7ea0769e7e05db112be6404e82fb7304))
+* **mcp:** add a loopover_get_bounty_advisory CLI mirror ([#6954](https://github.com/JSONbored/loopover/issues/6954)) ([7733371](https://github.com/JSONbored/loopover/commit/77333710e881f8c3848513bec6e4410b0f3f4634))
+* **mcp:** add a loopover_get_maintainer_lane CLI mirror ([#6942](https://github.com/JSONbored/loopover/issues/6942)) ([71bc183](https://github.com/JSONbored/loopover/commit/71bc1833f6c35f4bbcd34f61492203edad290937))
+* **mcp:** add a maintain audit-feed CLI mirror for loopover_get_agent_audit_feed ([#6733](https://github.com/JSONbored/loopover/issues/6733)) ([#6933](https://github.com/JSONbored/loopover/issues/6933)) ([5347291](https://github.com/JSONbored/loopover/commit/5347291b63dbf6d45f47ed19da530b2371078554))
+* **mcp:** add a maintain outcome-calibration CLI mirror ([#6960](https://github.com/JSONbored/loopover/issues/6960)) ([a4310f1](https://github.com/JSONbored/loopover/commit/a4310f1ca34fd22758275a8033247f537f1dc6a7))
+* **mcp:** add a typed PostHog wrapper module for packages/loopover-mcp ([7152db6](https://github.com/JSONbored/loopover/commit/7152db66465311cf807fbecc0d2e56e4ec99e8ab))
+* **mcp:** add maintain onboarding-pack CLI mirror ([#6913](https://github.com/JSONbored/loopover/issues/6913)) ([96ee9c4](https://github.com/JSONbored/loopover/commit/96ee9c4a7c34da2fe987e1c2e92f101570e4dd39))
+* **mcp:** CLI mirror for loopover_draft_pr_body ([#6974](https://github.com/JSONbored/loopover/issues/6974)) ([13bd48b](https://github.com/JSONbored/loopover/commit/13bd48bb9342f993916b8deb79cf287994b41aaf))
+* **mcp:** CLI mirror for loopover_explain_gate_disposition ([#6966](https://github.com/JSONbored/loopover/issues/6966)) ([4966070](https://github.com/JSONbored/loopover/commit/4966070447dd45fcd4d5a2549a7e0713ad10c678))
+* **mcp:** CLI stdio mirror for loopover_get_repo_outcome_patterns ([#6962](https://github.com/JSONbored/loopover/issues/6962)) ([244988b](https://github.com/JSONbored/loopover/commit/244988bf1a9773644069ea1b3c759434159187ce))
+* **mcp:** mirror contributor-issue-draft generation to an MCP tool + maintain CLI ([#7019](https://github.com/JSONbored/loopover/issues/7019)) ([bd4c172](https://github.com/JSONbored/loopover/commit/bd4c172ebfb4fe707898aaa29584235f897341d4)), closes [#6757](https://github.com/JSONbored/loopover/issues/6757)
+* **mcp:** mirror loopover_monitor_open_prs to the stdio wrapper and CLI ([#6789](https://github.com/JSONbored/loopover/issues/6789)) ([544cb31](https://github.com/JSONbored/loopover/commit/544cb3157bb5ef56aeebfa712438cccf6d4f04b6))
+* **mcp:** record local stdio tool calls at the dispatch chokepoint ([#6432](https://github.com/JSONbored/loopover/issues/6432)) ([45fe399](https://github.com/JSONbored/loopover/commit/45fe39900bd9715baf7fbc330dff7c3b447a51e6)), closes [#6238](https://github.com/JSONbored/loopover/issues/6238)
+* **mcp:** register loopover_close_pr write-tool in both MCP surfaces ([#6615](https://github.com/JSONbored/loopover/issues/6615)) ([#6715](https://github.com/JSONbored/loopover/issues/6715)) ([3f6591d](https://github.com/JSONbored/loopover/commit/3f6591d6ca3523357446f5e1e62510d401e7aa12))
+* **mcp:** register plan-DAG tools + local scorer in packages/loopover-mcp ([1aa6603](https://github.com/JSONbored/loopover/commit/1aa66037568c31e3f00f0379542f66d4836d166c))
+* **mcp:** register plan-DAG tools + local scorer in packages/loopover-mcp ([f096969](https://github.com/JSONbored/loopover/commit/f09696971fbf7b6dda7d261fc1ea0f790942629f)), closes [#6150](https://github.com/JSONbored/loopover/issues/6150)
+* **mcp:** register the 8 miner write-tools on the local stdio server ([#6390](https://github.com/JSONbored/loopover/issues/6390)) ([9197680](https://github.com/JSONbored/loopover/commit/9197680e355634629ec7cae5a0bd193ec6ca2eb7)), closes [#6149](https://github.com/JSONbored/loopover/issues/6149)
+* **mcp:** register the maintain REST surface as local stdio tools ([#6382](https://github.com/JSONbored/loopover/issues/6382)) ([aa83a48](https://github.com/JSONbored/loopover/commit/aa83a48886ded90a8f3c7e264b1fa1d1589884d5)), closes [#6152](https://github.com/JSONbored/loopover/issues/6152)
+* **mcp:** REST route + CLI mirror for loopover_get_eligibility_plan ([#6692](https://github.com/JSONbored/loopover/issues/6692)) ([bb028ec](https://github.com/JSONbored/loopover/commit/bb028ec06a0e5a3581049deb99eab534d5456836)), closes [#6621](https://github.com/JSONbored/loopover/issues/6621)
+* **mcp:** REST routes + CLI resource mirrors for finding-taxonomy and enrichment-analyzers ([#6709](https://github.com/JSONbored/loopover/issues/6709)) ([b0677cd](https://github.com/JSONbored/loopover/commit/b0677cd5ca13998d88071ae71437feb6c18574e4)), closes [#6620](https://github.com/JSONbored/loopover/issues/6620)
+* **mcp:** validate .loopover.yml offline by extracting buildFocusManifestValidation into @loopover/engine ([#6425](https://github.com/JSONbored/loopover/issues/6425)) ([22faecf](https://github.com/JSONbored/loopover/commit/22faecfe8eceb3a1762509b81ac9c6b26606d374)), closes [#6269](https://github.com/JSONbored/loopover/issues/6269)
+
+
+### Fixes
+
+* **apps:** update remaining gittensory references across loopover-miner-ui, loopover-ui, and loopover-miner-extension ([af6b16c](https://github.com/JSONbored/loopover/commit/af6b16c9feefdf68172be53899fcc8de4f97bb14))
+* **apps:** update remaining gittensory references across loopover-miner-ui, loopover-ui, and loopover-miner-extension ([3287ab3](https://github.com/JSONbored/loopover/commit/3287ab3a49781b30279c8305df8c8f1be6e56fd1))
+* **auth:** give device-flow polling its own rate-limit budget ([0244058](https://github.com/JSONbored/loopover/commit/0244058bd0779f767861c742c9988ac8ce8cf528))
+* **auth:** give device-flow polling its own rate-limit budget ([1c566a0](https://github.com/JSONbored/loopover/commit/1c566a0c80e61ca2922b6fefe79e4c9c20b63f3e)), closes [#6792](https://github.com/JSONbored/loopover/issues/6792)
+* **ci:** derive version-copy floor from single source of truth ([e449499](https://github.com/JSONbored/loopover/commit/e449499ca59ed8be64449faef35611b39469b8ff))
+* **ci:** derive version-copy floor from single source of truth ([ab11e8b](https://github.com/JSONbored/loopover/commit/ab11e8b83d520d9fb3f0fb7242c2b4d08972c328)), closes [#6292](https://github.com/JSONbored/loopover/issues/6292)
+* **config:** scrub remaining pre-rename gittensory references ([23152da](https://github.com/JSONbored/loopover/commit/23152dafcc1bbb329bdc63606dee311cdb4267cf))
+* **config:** scrub remaining pre-rename gittensory references ([e4b0f8c](https://github.com/JSONbored/loopover/commit/e4b0f8cd4e24cbc7c14b157e7d660f73adca2115))
+* **mcp:** honor --help on the contributor-profile CLI command ([4ac395a](https://github.com/JSONbored/loopover/commit/4ac395aa27b1af7e567d0e29af1b770178484261))
+* **mcp:** honor --help on the contributor-profile CLI command ([dee57ea](https://github.com/JSONbored/loopover/commit/dee57ea42da094eecc28a3628f64c8368fedb1e5)), closes [#6992](https://github.com/JSONbored/loopover/issues/6992)
+* **mcp:** list maintain and contributor-profile in --help ([#7036](https://github.com/JSONbored/loopover/issues/7036)) ([b153047](https://github.com/JSONbored/loopover/commit/b153047f7a14574f85de7cb6d94edf5cfc96189c))
+* **mcp:** redact a parenthesis/bracket/colon-prefixed local path in redactLocalPath ([97e3e6b](https://github.com/JSONbored/loopover/commit/97e3e6bc9b490034dbabc7cefc9809f27445a0cf))
+* **mcp:** rename enrichment-analyzers resource URI to loopover:// ([feec18c](https://github.com/JSONbored/loopover/commit/feec18c286fcced9b72fe471728a1acfe6baf93c))
+* **mcp:** rename enrichment-analyzers resource URI to loopover:// ([4d9d6c4](https://github.com/JSONbored/loopover/commit/4d9d6c42dbbe60050e7b2b8600fee6316632f324))
+* **mcp:** sanitize every terminal path that prints API-controlled text ([436c6c1](https://github.com/JSONbored/loopover/commit/436c6c1349c6bd382b35e8fb9bade8a58b57d399))
+* **mcp:** sanitize every terminal path that prints API-controlled text ([7506cda](https://github.com/JSONbored/loopover/commit/7506cdad2ffa9e6442f58464f0bddf7bc238e73c)), closes [#6261](https://github.com/JSONbored/loopover/issues/6261)
+* **test:** update grafana dashboard assertions for the historical-continuity query rewrite ([8cd0b24](https://github.com/JSONbored/loopover/commit/8cd0b2489e1b4f1803a310951f53f25d94ff6ddb))
+
 ## [3.0.0](https://github.com/JSONbored/loopover/compare/mcp-v2.0.1...mcp-v3.0.0) (2026-07-14)
 
 
