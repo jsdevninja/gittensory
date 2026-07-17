@@ -176,6 +176,7 @@ export async function startFixtureServer(
     onApiRequest?: (request: IncomingMessage) => void;
     validateConfigWarnings?: string[];
     openPrMonitor?: Record<string, unknown>;
+    prOutcomes?: Record<string, unknown>;
     intakeStatus?: number;
     localBranchAnalysisStatus?: number;
     /** #6743: overrides the repo-doc refresh route's default "opened a new PR" response, e.g. to exercise
@@ -309,6 +310,12 @@ export async function startFixtureServer(
     }
     if (request.url === "/v1/contributors/JSONbored/open-pr-monitor" && request.method === "GET") {
       response.end(JSON.stringify({ ...openPrMonitorFixture(), ...(options.openPrMonitor ?? {}) }));
+      return;
+    }
+    const prOutcomesMatch = request.url?.match(/^\/v1\/contributors\/([^/]+)\/pr-outcomes(?:\?(.*))?$/);
+    if (prOutcomesMatch && request.method === "GET") {
+      const login = decodeURIComponent(prOutcomesMatch[1]!);
+      response.end(JSON.stringify({ ...prOutcomesFixture(login), ...(options.prOutcomes ?? {}) }));
       return;
     }
     if (request.url === "/v1/contributors/JSONbored/repos/JSONbored/loopover/decision" && request.method === "GET") {
@@ -870,6 +877,25 @@ export function openPrMonitorFixture() {
         summary: "CI is red on this PR.",
         reasons: ["1 check is failing."],
         nextSteps: ["Fix the failing check, then push."],
+      },
+    ],
+  };
+}
+
+/** Mirrors GET /v1/contributors/:login/pr-outcomes / buildContributorPrOutcomes. */
+export function prOutcomesFixture(login = "JSONbored") {
+  return {
+    login: login.toLowerCase(),
+    count: 1,
+    summary: `LoopOver post-merge outcomes for ${login}: 1 merged PR(s).`,
+    outcomes: [
+      {
+        repoFullName: "JSONbored/loopover",
+        pullNumber: 42,
+        outcome: "merged" as const,
+        attribution: "Your pull request JSONbored/loopover#42 merged. Merged contributions strengthen your standing.",
+        deeplink: "https://github.com/JSONbored/loopover/pull/42",
+        recordedAt: "2026-06-01T00:00:00.000Z",
       },
     ],
   };

@@ -24,6 +24,7 @@ import {
   ContributorPatternReportSchema,
   ContributorDecisionPackSchema,
   ContributorOpenPrMonitorSchema,
+  ContributorPrOutcomesSchema,
   ContributorRewardRiskStrategySchema,
   ContributorProfileSchema,
   ContributorScoringProfileSchema,
@@ -773,6 +774,21 @@ export function buildOpenApiSpec() {
       200: {
         description: "Contributor open-PR monitor with classifications and public-safe next-step packets from cached metadata.",
         content: { "application/json": { schema: ContributorOpenPrMonitorSchema } },
+      },
+    },
+  });
+  registry.registerPath({
+    method: "get",
+    path: "/v1/contributors/{login}/pr-outcomes",
+    summary: "Contributor post-merge PR outcome history",
+    request: {
+      params: z.object({ login: z.string() }),
+      query: z.object({ limit: z.coerce.number().int().positive().max(100).optional() }),
+    },
+    responses: {
+      200: {
+        description: "Self-scoped post-merge outcome records with public-safe attribution (mirrors loopover_pr_outcome).",
+        content: { "application/json": { schema: ContributorPrOutcomesSchema } },
       },
     },
   });

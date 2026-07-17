@@ -270,6 +270,7 @@ import {
 } from "../signals/extension-contributor-context";
 import { attachDataQuality, buildCoreSignalFidelity, buildFreshnessSloReport, buildRepoDataQuality, buildSignalFidelity } from "../signals/data-quality";
 import { buildContributorOpenPrMonitor } from "../signals/contributor-open-pr-monitor";
+import { buildContributorPrOutcomes } from "../signals/contributor-pr-outcomes";
 import { buildPullRequestReviewability, type PullRequestReviewability } from "../signals/reward-risk";
 import { buildLocalBranchAnalysis, findCurrentBranchPullRequest } from "../signals/local-branch";
 import { buildIssueSlopAssessment, ISSUE_SLOP_RUBRIC_MARKDOWN } from "../signals/issue-slop";
@@ -3323,6 +3324,23 @@ export function createApp() {
     const unauthorized = await requireContributorAccess(c, login);
     if (unauthorized) return unauthorized;
     return c.json(await buildContributorOpenPrMonitor(c.env, login));
+  });
+
+  // #6747: REST mirror of loopover_pr_outcome — same requireContributorAccess gate + notification-delivery source.
+  app.get("/v1/contributors/:login/pr-outcomes", async (c) => {
+    const login = c.req.param("login");
+    const unauthorized = await requireContributorAccess(c, login);
+    if (unauthorized) return unauthorized;
+    const limitParam = c.req.query("limit");
+    let limit: number | undefined;
+    if (limitParam !== undefined) {
+      const parsed = Number(limitParam);
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) {
+        return c.json({ error: "invalid_limit", detail: "limit must be an integer between 1 and 100" }, 400);
+      }
+      limit = parsed;
+    }
+    return c.json(await buildContributorPrOutcomes(c.env, login, limit));
   });
 
   app.get("/v1/contributors/:login/repos/:owner/:repo/decision", async (c) => {

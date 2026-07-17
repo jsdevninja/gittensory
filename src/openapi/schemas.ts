@@ -463,6 +463,24 @@ export const ContributorOpenPrMonitorSchema = z
   })
   .openapi("ContributorOpenPrMonitor");
 
+export const ContributorPrOutcomesSchema = z
+  .object({
+    login: z.string(),
+    count: z.number(),
+    summary: z.string(),
+    outcomes: z.array(
+      z.object({
+        repoFullName: z.string(),
+        pullNumber: z.number().nullable(),
+        outcome: z.literal("merged"),
+        attribution: z.string(),
+        deeplink: z.string(),
+        recordedAt: z.string(),
+      }),
+    ),
+  })
+  .openapi("ContributorPrOutcomes");
+
 export const ContributorOpportunitySchema = z
   .object({
     repoFullName: z.string(),

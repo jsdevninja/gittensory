@@ -89,6 +89,7 @@ const CLI_COMMAND_SPEC = {
   "repo-decision": [],
   "contributor-profile": [],
   "monitor-open-prs": [],
+  "pr-outcomes": [],
   "analyze-branch": [],
   preflight: [],
   "review-pr": [],
@@ -1131,6 +1132,12 @@ const STDIO_TOOL_DESCRIPTORS = [
       "Inspect a contributor's open PRs on registered repos, classify queue state, and return public-safe next-step packets from cached metadata.",
   },
   {
+    name: "loopover_pr_outcome",
+    category: "review",
+    description:
+      "Return a contributor's own post-merge outcome records — for each merged PR, a public-safe attribution of what it did for their standing on the repo. Self-scoped: only the authenticated login's outcomes.",
+  },
+  {
     name: "loopover_compare_pr_variants",
     category: "branch",
     description: "Compare private LoopOver scoring previews across local/metadata variants.",
@@ -2067,6 +2074,21 @@ registerStdioTool(
   async ({ login }) => {
     const payload = await getOpenPrMonitor(login);
     return toolResult(openPrMonitorToolSummary(login, payload), payload);
+  },
+);
+
+registerStdioTool(
+  "loopover_pr_outcome",
+  {
+    description: stdioToolDescription("loopover_pr_outcome"),
+    inputSchema: {
+      login: z.string().min(1),
+      limit: z.number().int().positive().max(100).optional(),
+    },
+  },
+  async ({ login, limit }) => {
+    const payload = await getPrOutcomes(login, limit);
+    return toolResult(prOutcomesToolSummary(login, payload), payload);
   },
 );
 
@@ -3376,6 +3398,7 @@ async function runCli(args) {
   if (command === "repo-decision") return repoDecisionCli(options);
   if (command === "contributor-profile") return contributorProfileCli(options);
   if (command === "monitor-open-prs") return monitorOpenPrsCli(options);
+  if (command === "pr-outcomes") return prOutcomesCli(options);
   if (command === "review-pr") return reviewPrCli(options);
   if (command !== "analyze-branch" && command !== "preflight") {
     const suggestion = suggestCommand(command);
@@ -3835,6 +3858,45 @@ async function monitorOpenPrsCli(options) {
     const heading = `${pr.repoFullName}#${pr.number} [${pr.classification}] ${pr.title}`;
     process.stdout.write(`${sanitizePlainTextTerminalOutput(heading)}\n`);
     for (const step of pr.nextSteps ?? []) process.stdout.write(`  - ${sanitizePlainTextTerminalOutput(step)}\n`);
+  }
+}
+
+function printPrOutcomesHelp() {
+  process.stdout.write(
+    [
+      "Usage: loopover-mcp pr-outcomes --login <github-login> [--limit N] [--json]",
+      "",
+      "List your post-merge PR outcome history (public-safe attribution per merged PR).",
+      "Mirrors the loopover_pr_outcome MCP tool and GET /v1/contributors/{login}/pr-outcomes. No source upload.",
+      "",
+      "Pass --json for machine-readable output.",
+    ].join("\n") + "\n",
+  );
+}
+
+async function prOutcomesCli(options) {
+  if (options.help === true) return printPrOutcomesHelp();
+  const login = options.login ?? process.env.LOOPOVER_LOGIN ?? process.env.GITHUB_LOGIN;
+  if (!login) throw new Error("Pass --login <github-login> or set LOOPOVER_LOGIN.");
+  const limitRaw = options.limit;
+  let limit;
+  if (limitRaw !== undefined && limitRaw !== true) {
+    const parsed = Number(limitRaw);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) {
+      throw new Error("Pass --limit as an integer between 1 and 100.");
+    }
+    limit = parsed;
+  }
+  const payload = await getPrOutcomes(login, limit);
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    return;
+  }
+  process.stdout.write(`${sanitizePlainTextTerminalOutput(prOutcomesToolSummary(login, payload))}\n`);
+  for (const outcome of payload?.outcomes ?? []) {
+    const heading = `${outcome.repoFullName}#${outcome.pullNumber ?? "?"} [${outcome.outcome}]`;
+    process.stdout.write(`${sanitizePlainTextTerminalOutput(heading)}\n`);
+    if (outcome.attribution) process.stdout.write(`  ${sanitizePlainTextTerminalOutput(outcome.attribution)}\n`);
   }
 }
 
@@ -4317,6 +4379,7 @@ function printHelp() {
   loopover-mcp decision-pack --login <github-login> [--json]
   loopover-mcp repo-decision --login <github-login> --repo owner/repo [--json]
   loopover-mcp monitor-open-prs --login <github-login> [--json]
+  loopover-mcp pr-outcomes --login <github-login> [--limit N] [--json]
   loopover-mcp analyze-branch --login <github-login> [--repo owner/repo] [--base origin/main] [--branch-eligibility eligible|ineligible|unknown] [--pending-merged-prs 3] [--expected-open-prs 0] [--projected-credibility 0.8] [--scenario-note "..."] [--validation "passed|npm test|summary"] [--format table] [--json]
   loopover-mcp preflight --login <github-login> [--repo owner/repo] [--base origin/main] [--branch-eligibility eligible|ineligible|unknown] [--pending-merged-prs 3] [--expected-open-prs 0] [--projected-credibility 0.8] [--validation "passed|npm test|summary"] [--format table] [--json]
   loopover-mcp review-pr --login <github-login> [--repo owner/repo] [--base origin/main] [--commit <message>]... [--body <text>] [--body-file <path>] [--linked-issue <number>] [--json]
@@ -4335,7 +4398,7 @@ function printHelp() {
   LOOPOVER_PROFILE
   LOOPOVER_CONFIG_PATH or LOOPOVER_CONFIG_DIR
   LOOPOVER_API_TOKEN, LOOPOVER_MCP_TOKEN, LOOPOVER_TOKEN, or a session from loopover-mcp login
-  LOOPOVER_LOGIN or GITHUB_LOGIN (default --login for analyze-branch, preflight, review-pr, decision-pack, repo-decision, monitor-open-prs, and agent plan/packet)
+  LOOPOVER_LOGIN or GITHUB_LOGIN (default --login for analyze-branch, preflight, review-pr, decision-pack, repo-decision, monitor-open-prs, pr-outcomes, and agent plan/packet)
   GITHUB_TOKEN for non-interactive login bootstrap
   GITTENSOR_SCORE_PREVIEW_CMD
   GITTENSOR_ROOT
@@ -5463,12 +5526,25 @@ function getOpenPrMonitor(login) {
   return apiGet(`/v1/contributors/${encodeURIComponent(login)}/open-pr-monitor`);
 }
 
+function getPrOutcomes(login, limit) {
+  const query = new URLSearchParams();
+  if (limit != null) query.set("limit", String(limit));
+  const suffix = query.size > 0 ? `?${query}` : "";
+  return apiGet(`/v1/contributors/${encodeURIComponent(login)}/pr-outcomes${suffix}`);
+}
+
 // Mirror the API's own `summary` when it sends one, so the CLI and the loopover_monitor_open_prs MCP
 // tool (which returns monitor.summary verbatim) never drift into two different sentences for one payload.
 function openPrMonitorToolSummary(login, payload) {
   const summary = typeof payload?.summary === "string" ? payload.summary.trim() : "";
   if (summary) return summary;
   return `LoopOver open-PR monitor for ${login}.`;
+}
+
+function prOutcomesToolSummary(login, payload) {
+  const summary = typeof payload?.summary === "string" ? payload.summary.trim() : "";
+  if (summary) return summary;
+  return `LoopOver post-merge outcomes for ${login}.`;
 }
 
 function isCacheableDecisionPack(payload, login) {
