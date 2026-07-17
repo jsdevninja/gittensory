@@ -7,7 +7,7 @@
 #   ./scripts/deploy-selfhost-prebuilt.sh
 #
 # Optional knobs:
-#   SENTRY_RELEASE=gittensory-selfhost@edge-abc123 ./scripts/deploy-selfhost-prebuilt.sh
+#   SENTRY_RELEASE=loopover-selfhost@edge-abc123 ./scripts/deploy-selfhost-prebuilt.sh
 #   SELFHOST_COMPOSE_FILES="docker-compose.yml docker-compose.override.yml" ./scripts/deploy-selfhost-prebuilt.sh
 #   SELFHOST_SKIP_SENTRY_UPLOAD=1 ./scripts/deploy-selfhost-prebuilt.sh
 #   SELFHOST_USE_INFISICAL=1 ./scripts/deploy-selfhost-prebuilt.sh   # opt-in Infisical secrets (#5120), see docs
@@ -74,7 +74,7 @@ run_sentry_upload() {
     -v "$PWD:/work" \
     -w /work \
     "$NODE_IMAGE" \
-    sh -lc 'apt-get update >/dev/null && apt-get install -y --no-install-recommends ca-certificates git >/dev/null && git config --global --add safe.directory /work && (npx -y "$SENTRY_CLI_PACKAGE" releases new "$SENTRY_RELEASE" >/tmp/gittensory-sentry-release-new.log 2>&1 || true) && npx -y "$SENTRY_CLI_PACKAGE" releases set-commits "$SENTRY_RELEASE" --auto && npx -y "$SENTRY_CLI_PACKAGE" sourcemaps inject dist && node scripts/validate-selfhost-sourcemap.mjs && npx -y "$SENTRY_CLI_PACKAGE" sourcemaps upload --release="$SENTRY_RELEASE" dist && npx -y "$SENTRY_CLI_PACKAGE" releases finalize "$SENTRY_RELEASE" && chown -R "$HOST_UID:$HOST_GID" dist node_modules package-lock.json'
+    sh -lc 'apt-get update >/dev/null && apt-get install -y --no-install-recommends ca-certificates git >/dev/null && git config --global --add safe.directory /work && (npx -y "$SENTRY_CLI_PACKAGE" releases new "$SENTRY_RELEASE" >/tmp/loopover-sentry-release-new.log 2>&1 || true) && npx -y "$SENTRY_CLI_PACKAGE" releases set-commits "$SENTRY_RELEASE" --auto && npx -y "$SENTRY_CLI_PACKAGE" sourcemaps inject dist && node scripts/validate-selfhost-sourcemap.mjs && npx -y "$SENTRY_CLI_PACKAGE" sourcemaps upload --release="$SENTRY_RELEASE" dist && npx -y "$SENTRY_CLI_PACKAGE" releases finalize "$SENTRY_RELEASE" && chown -R "$HOST_UID:$HOST_GID" dist node_modules package-lock.json'
 }
 
 run_init_secrets() {
@@ -125,7 +125,7 @@ fi
 # Default to the current checkout on every deploy. Do not reuse a persisted .env value here:
 # that value is written by the previous deploy and would make future updates report stale
 # release/version metadata unless the operator remembered to override it manually.
-SENTRY_RELEASE="${SENTRY_RELEASE:-gittensory-selfhost@$(git rev-parse --short=8 HEAD)}"
+SENTRY_RELEASE="${SENTRY_RELEASE:-loopover-selfhost@$(git rev-parse --short=8 HEAD)}"
 export SENTRY_RELEASE
 
 env_put SENTRY_RELEASE "$SENTRY_RELEASE"

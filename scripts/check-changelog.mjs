@@ -13,7 +13,7 @@ if (invalidArgs.length > 0) {
   process.exit(1);
 }
 
-const tempDir = mkdtempSync(join(tmpdir(), "gittensory-changelog-"));
+const tempDir = mkdtempSync(join(tmpdir(), "loopover-changelog-"));
 
 try {
   const checks = [

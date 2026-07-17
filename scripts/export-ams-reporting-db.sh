@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# AMS (gittensory-miner) redacted reporting export (#5184 follow-up; closes the gap PR #5471 flagged: Grafana must
+# AMS (loopover-miner) redacted reporting export (#5184 follow-up; closes the gap PR #5471 flagged: Grafana must
 # never mount the miner's live LOOPOVER_MINER_CONFIG_DIR ledgers directly -- attempt_log_events.reason and
 # .payload_json are free-form and can carry arbitrary internal detail). Mirrors export-grafana-reporting-db.sh's
 # shape (incremental fingerprint fast-path, atomic tmp-then-move, fail-open on a missing/unreadable source) but is
