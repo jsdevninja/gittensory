@@ -1419,7 +1419,11 @@ export function detectGittensorContributor(
 export function shouldPublishPrIntelligenceComment(settings: RepositorySettings, detection: ContributorDetection): boolean {
   if (settings.commentMode === "off") return false;
   if (settings.publicSurface !== "comment_and_label" && settings.publicSurface !== "comment_only") return false;
-  if (settings.publicAudienceMode === "oss_maintainer") return settings.commentMode === "all_prs" || detection.detected || detection.source !== "official_gittensor_api";
+  // #6776: gate on commentMode, not the audience. The dropped `detection.source !== "official_gittensor_api"`
+  // disjunct was a tautology -- source is only ever "official_gittensor_api" (paired with detected: true) or
+  // undefined, so it was true whenever `detected` was false, making the whole branch unconditionally true and
+  // silently treating `detected_contributors_only` as `all_prs` for every oss_maintainer repo.
+  if (settings.publicAudienceMode === "oss_maintainer") return settings.commentMode === "all_prs" || detection.detected;
   return detection.detected && detection.source === "official_gittensor_api";
 }
 

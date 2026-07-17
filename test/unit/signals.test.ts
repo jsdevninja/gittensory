@@ -820,6 +820,19 @@ describe("world-class backend signals", () => {
     expect(shouldPublishPrIntelligenceComment({ ...settings, commentMode: "all_prs" }, undetected)).toBe(false);
     expect(shouldPublishPrIntelligenceComment({ ...settings, commentMode: "all_prs" }, cachedDetected)).toBe(false);
     expect(shouldPublishPrIntelligenceComment({ ...settings, commentMode: "all_prs" }, { ...cachedDetected, source: "official_gittensor_api" })).toBe(true);
+
+    // #6776: the oss_maintainer branch must respect commentMode, not silently treat detected_contributors_only
+    // as all_prs. (The dropped `source !== "official_gittensor_api"` disjunct was a tautology making it always true.)
+    const ossSettings = { ...settings, publicAudienceMode: "oss_maintainer" as const };
+    // commentMode: all_prs short-circuits true even for an undetected contributor.
+    expect(shouldPublishPrIntelligenceComment({ ...ossSettings, commentMode: "all_prs" }, undetected)).toBe(true);
+    // REGRESSION: detected_contributors_only + an undetected contributor → false (previously an always-true tautology).
+    expect(shouldPublishPrIntelligenceComment({ ...ossSettings, commentMode: "detected_contributors_only" }, undetected)).toBe(false);
+    // A detected (even non-official) contributor still comments: the gate is now commentMode + detected, with no
+    // audience/source carve-out — locking in the intended, tautology-free semantics.
+    expect(cachedDetected.detected).toBe(true);
+    expect(cachedDetected.source).not.toBe("official_gittensor_api");
+    expect(shouldPublishPrIntelligenceComment({ ...ossSettings, commentMode: "detected_contributors_only" }, cachedDetected)).toBe(true);
   });
 
   it("returns hold/caution opportunities for inactive and issue-discovery lanes", () => {
