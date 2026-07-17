@@ -29,7 +29,7 @@
   "plugins": [
     {
       "type": "node-workspace",
-      "merge": false
+      "merge": true
     }
   ],
   "changelog-sections": [
