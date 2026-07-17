@@ -20,6 +20,7 @@ import {
 import { ActivationPreview } from "@/components/site/app-panels/activation-preview";
 import { AmsMinerCohortCard } from "@/components/site/app-panels/ams-miner-cohort-card";
 import { AiReviewSettings } from "@/components/site/app-panels/ai-review-settings";
+import { ChatQaPanel } from "@/components/site/app-panels/chat-qa-panel";
 import { ContributorQualityTable } from "@/components/site/app-panels/contributor-quality-table";
 import type { MaintainerTopContributor } from "@/components/site/app-panels/contributor-quality-table-model";
 import { GateOutcomeCard } from "@/components/site/app-panels/gate-outcome-card";
@@ -95,6 +96,8 @@ type MaintainerDashboard = {
     bucket: string;
     reason: string;
     slop?: { risk: number; band: string } | null;
+    /** Whether this PR's repo has opted into the grounded @loopover chat Q&A surface (#6489). */
+    chatQaEnabled: boolean;
   }>;
   settingsPreview: { removed: string[]; added: string[] };
   qualityDashboard: {
@@ -459,6 +462,8 @@ function MaintainerDashboardView({
               linkedIssueGateMode/duplicatePrGateMode/qualityGateMode (plus reviewCheckMode for its
               on/off check) all config-as-code only now (Batch C, loopover#6444) -- writing them via
               PUT /settings is a silent no-op, so the switch had nothing left to do. */}
+
+          <ChatQaPanel reviewability={data.reviewability} />
 
           <SurfacePreview
             reviewability={data.reviewability}
