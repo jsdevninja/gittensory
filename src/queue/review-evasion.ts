@@ -79,8 +79,8 @@ type CloseEnforcementGateResult =
  *  grant rather than attempting a doomed mutation -- the reopen-reclose guard was the last holdout (#6603).
  *  The parameter stays nullable rather than required: it is the shape a future non-mutating caller would
  *  need, and narrowing it is a signature change #6603 deliberately left out of scope.
- *  `paused: null` records NO audit event on a paused/frozen repo -- draft-dodge's existing, preserved gap
- *  (every other guard here DOES audit a paused stand-down; draft-dodge simply never has). */
+ *  Every caller also passes a real `paused` object so a paused/frozen stand-down is audited the same way for
+ *  all five close-enforcement guards (#6604). */
 async function evaluateCloseEnforcementGate(args: {
   env: Env;
   installationId: number;
@@ -278,9 +278,10 @@ async function closeDraftDodgeAttemptIfBlocked(
         detail: `dry-run: would close draft-dodge attempt by ${draftDodgeAuthor} — prior gate failure on headSha ${pr.headSha} stands`,
         metadata: { ...gateMetadata, mode: "dry_run" },
       },
-      // Draft-dodge is the one guard of the 5 that records NO audit event on a paused/frozen repo -- a
-      // pre-existing gap this extraction preserves rather than fixes (a refactor must not change behavior).
-      paused: null,
+      paused: {
+        detail: `agent actions paused -- draft-dodge close not enforced for ${draftDodgeAuthor}`,
+        metadata: gateMetadata,
+      },
       permissionReadiness: {
         detail: `denied draft-dodge close for ${draftDodgeAuthor} — pull_requests: write not granted`,
         metadata: gateMetadata,
