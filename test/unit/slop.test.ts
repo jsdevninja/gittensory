@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildPullRequestAdvisory, evaluateGateCheck } from "../../src/rules/advisory";
+import { hasClearNoIssueRationale as engineHasClearNoIssueRationale } from "../../src/signals/engine";
 import {
   buildEmptyIssueBodyFinding,
   buildIssueSlopAssessment,
@@ -108,6 +109,38 @@ describe("buildSlopAssessment", () => {
     // body omitted entirely (undefined) — the `pr.body ?? ""` fallback, distinct from an explicit "" body.
     expect(hasClearNoIssueRationale({ title: "" })).toBe(false);
     expect(hasClearNoIssueRationale({ title: "fix something" })).toBe(false);
+  });
+
+  // slop.ts's copy is a HAND-KEPT mirror of engine.ts's same-named export (#4884). Nothing pinned the two as
+  // identical, so they could silently drift — this asserts they agree on every rationale form the regex
+  // recognizes plus the negative/fallback cases (#6777).
+  it("hasClearNoIssueRationale stays byte-for-byte in sync with engine.ts's hand-kept copy (#6777)", () => {
+    const cases: Array<{ title: string; body?: string | null }> = [
+      { title: "", body: "docs only" },
+      { title: "", body: "docs-only change" },
+      { title: "", body: "doc only" },
+      { title: "", body: "tests only" },
+      { title: "", body: "test-only regression coverage" },
+      { title: "", body: "ci only" },
+      { title: "", body: "ci-only workflow bump" },
+      { title: "", body: "refactor only" },
+      { title: "", body: "refactor-only cleanup" },
+      { title: "", body: "no issue: trivial" },
+      { title: "", body: "no issue because it is trivial" },
+      { title: "", body: "no linked issue: chore" },
+      { title: "", body: "no ticket because this is maintenance" },
+      { title: "maintenance sweep", body: "" },
+      { title: "typo", body: "" },
+      { title: "chore", body: "" },
+      { title: "cleanup", body: "" },
+      { title: "fix something", body: "" },
+      { title: "", body: "" },
+      { title: "" }, // body omitted — the `?? ""` fallback on both copies
+      { title: "", body: null },
+    ];
+    for (const pr of cases) {
+      expect(hasClearNoIssueRationale(pr), JSON.stringify(pr)).toBe(engineHasClearNoIssueRationale(pr));
+    }
   });
 
   it("raises duplicate-cluster slop when the PR is flagged as in a duplicate cluster (#563)", () => {

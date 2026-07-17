@@ -13,10 +13,13 @@ import type { AdvisoryFinding } from "../types/predicted-gate-types.js";
 // triage (`buildIssueSlopAssessment` and friends) stays in `src/`, since it is not needed by the miner's
 // self-review path and was never part of this issue's scope.
 //
-// GENERIC_COMMIT_PATTERN / hasClearNoIssueRationale below are a HAND-KEPT MIRROR of the same-named
-// exports in `packages/loopover-engine/src/signals/engine.ts` (#4884) — the full engine still carries
-// host-bound imports and is consumed via `src/signals/engine.ts`'s shim, so these two small, fully
-// self-contained pieces stay duplicated here instead.
+// hasClearNoIssueRationale below is a HAND-KEPT MIRROR of the same-named export in
+// `packages/loopover-engine/src/signals/engine.ts` (#4884) — the full engine still carries host-bound imports
+// and is consumed via `src/signals/engine.ts`'s shim, so this small, fully self-contained piece stays
+// duplicated here instead. The two copies are pinned as identical by a parity test (#6777).
+//
+// GENERIC_COMMIT_PATTERN is NOT mirrored (#6777): it has no `engine.ts` counterpart to drift against. It is
+// defined only here and imported directly by `signals/pr-text-lint.ts`.
 export const GENERIC_COMMIT_PATTERN =
   /^(?:(?:wip|fix(?:es|ed|ing)?|updat(?:e|es|ed|ing)|change[sd]?|edit[sd]?|patch|minor|tweak[sd]?|misc|cleanup|chore|stuff|temp|tmp|test|final|done|commit|asdf+)\b|\.+)[\s.!]*$/i;
 
