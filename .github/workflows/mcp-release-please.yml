@@ -101,11 +101,24 @@ jobs:
       # lock file"). Patches it directly on whichever release branch(es) release-please just
       # created/updated, using the same branch naming convention its own commits already rely on.
       #
-      # The engine branch also needs packages/loopover-miner/expected-engine.version bumped to match
-      # packages/loopover-engine/package.json's new version: release-please's engine component only
-      # ever touches files under packages/loopover-engine/**, so it can never update that cross-package
-      # pin itself -- scripts/check-engine-parity.ts's checkMinerEngineVersionPinSync would otherwise
-      # fail on every single engine release PR (confirmed live on the engine-v3.1.0 release PR, #5807).
+      # Also needs packages/loopover-miner/expected-engine.version bumped to match
+      # packages/loopover-engine/package.json's new version whenever a branch bumps engine:
+      # release-please's engine component only ever touches files under packages/loopover-engine/**,
+      # so it can never update that cross-package pin itself -- scripts/check-engine-parity.ts's
+      # checkMinerEngineVersionPinSync would otherwise fail on every release that bumps engine
+      # (confirmed live on the engine-v3.1.0 release PR, #5807).
+      #
+      # Branches to check are content-derived (git ls-remote --heads matching the release-please
+      # branch prefix), not a hardcoded per-component list: the linked-versions plugin (grouping
+      # engine with its dependents, release-please-config.json) puts mcp/engine/miner on ONE shared
+      # `--groups--<groupName>` branch instead of three separate `--components--<name>` branches, so
+      # a hardcoded `for component in mcp engine miner ui-kit` loop checking only the old
+      # `--components--` naming would silently never find/sync that branch at all (confirmed live:
+      # PR #7127's engine-and-dependents group branch left expected-engine.version stale, failing
+      # engine-parity:drift-check and two engine-version-display tests). Similarly, the
+      # expected-engine.version sync itself is now driven by comparing the checked-out branch's own
+      # committed pin against its own package.json (not an `if [ component = engine ]` check), so it
+      # fires correctly whether engine's bump landed via a solo branch or a shared group branch.
       - name: Sync package-lock.json and engine-version pin on any release branch
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
@@ -117,14 +130,13 @@ jobs:
           cp scripts/sync-release-lockfile-versions.mjs "$trusted_sync_script"
           git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
           gh auth setup-git
-          for component in mcp engine miner ui-kit; do
-            branch="release-please--branches--main--components--${component}"
-            if ! git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-              echo "No release branch for $component, skipping."
-              continue
-            fi
+          branches="$(git ls-remote --heads origin 'release-please--branches--main--*' | awk '{print $2}' | sed 's#refs/heads/##')"
+          if [ -z "$branches" ]; then
+            echo "No release-please branches found, skipping."
+          fi
+          for branch in $branches; do
             git fetch origin "$branch"
-            git checkout -B "sync-check-${component}" "origin/$branch"
+            git checkout -B "sync-check-$(printf '%s' "$branch" | tr '/' '-')" "origin/$branch"
             node "$trusted_sync_script" packages/loopover-mcp packages/loopover-engine packages/loopover-miner packages/loopover-ui-kit
             if git diff --quiet package-lock.json; then
               echo "package-lock.json already in sync on $branch."
@@ -133,16 +145,14 @@ jobs:
               git commit -m "chore(release): sync package-lock.json"
               git push origin "HEAD:$branch"
             fi
-            if [ "$component" = "engine" ]; then
-              engine_version="$(node -p "require('./packages/loopover-engine/package.json').version")"
-              printf '%s\n' "$engine_version" > packages/loopover-miner/expected-engine.version
-              if git diff --quiet packages/loopover-miner/expected-engine.version; then
-                echo "expected-engine.version already in sync on $branch."
-              else
-                git add packages/loopover-miner/expected-engine.version
-                git commit -m "chore(release): sync miner engine-version pin"
-                git push origin "HEAD:$branch"
-              fi
+            engine_version="$(node -p "require('./packages/loopover-engine/package.json').version")"
+            printf '%s\n' "$engine_version" > packages/loopover-miner/expected-engine.version
+            if git diff --quiet packages/loopover-miner/expected-engine.version; then
+              echo "expected-engine.version already in sync on $branch."
+            else
+              git add packages/loopover-miner/expected-engine.version
+              git commit -m "chore(release): sync miner engine-version pin"
+              git push origin "HEAD:$branch"
             fi
           done
 
