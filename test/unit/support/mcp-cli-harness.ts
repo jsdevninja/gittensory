@@ -6,6 +6,28 @@ import { join } from "node:path";
 import { expect } from "vitest";
 
 export const bin = join(process.cwd(), "packages/loopover-mcp/bin/loopover-mcp.js");
+export const repoOnboardingPackFixture = {
+  repoFullName: "owner/repo",
+  accepted: true,
+  policySource: "policy_compiler",
+  preview: {
+    repoFullName: "owner/repo",
+    generatedAt: "2026-07-17T00:00:00.000Z",
+    source: "policy_compiler",
+    previewOnly: true,
+    publicSafe: true,
+    contributionLanes: [],
+    labelPolicy: { preferredLabels: ["help wanted"], requiredLabels: [], discouragedLabels: [], note: null },
+    validationExpectations: ["npm test"],
+    readinessWarnings: [],
+    maintainerExpectations: [],
+    publicOutputBoundaries: ["Preview only."],
+    previewMarkdown: "# Contributor onboarding",
+    droppedPublicItems: [],
+    privateOwnerContext: { itemCount: 0, includedInPublicPreview: false },
+    publication: { status: "preview_only", allowed: false, actions: [], reason: "Preview-only output." },
+  },
+} as const;
 let server: Server | null = null;
 
 /** #6261: put `injection` in every free-text field of a slop assessment that reaches plain-text output. */
@@ -463,6 +485,14 @@ export async function startFixtureServer(
         }),
       );
       return;
+    }
+    const onboardingPackUrl = new URL(request.url ?? "/", "http://localhost");
+    if (onboardingPackUrl.pathname === "/v1/repos/owner/repo/onboarding-pack/preview" && request.method === "GET") {
+      const refresh = onboardingPackUrl.searchParams.get("refresh");
+      if (refresh === null || refresh === "true") {
+        response.end(JSON.stringify(repoOnboardingPackFixture));
+        return;
+      }
     }
     if (request.url === "/v1/upstream/drift" && request.method === "GET") {
       response.end(
