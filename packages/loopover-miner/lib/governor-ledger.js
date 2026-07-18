@@ -1,7 +1,5 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { normalizeGovernorLedgerEvent } from "@loopover/engine";
-import { openLocalStoreDb } from "./local-store.js";
+import { normalizeLocalStoreDbPath, openLocalStoreDb, resolveLocalStoreDbPath } from "./local-store.js";
 import { applySchemaMigrations } from "./schema-version.js";
 import {
   GOVERNOR_LEDGER_PURGE_SPEC,
@@ -22,26 +20,11 @@ const defaultDbFileName = "governor-ledger.sqlite3";
 let defaultGovernorLedger = null;
 
 export function resolveGovernorLedgerDbPath(env = process.env) {
-  const explicitPath = typeof env.LOOPOVER_MINER_GOVERNOR_LEDGER_DB === "string"
-    ? env.LOOPOVER_MINER_GOVERNOR_LEDGER_DB.trim()
-    : "";
-  if (explicitPath) return explicitPath;
-
-  const explicitConfigDir = typeof env.LOOPOVER_MINER_CONFIG_DIR === "string"
-    ? env.LOOPOVER_MINER_CONFIG_DIR.trim()
-    : "";
-  if (explicitConfigDir) return join(explicitConfigDir, defaultDbFileName);
-
-  const configHome = typeof env.XDG_CONFIG_HOME === "string" && env.XDG_CONFIG_HOME.trim()
-    ? env.XDG_CONFIG_HOME.trim()
-    : join(homedir(), ".config");
-  return join(configHome, "loopover-miner", defaultDbFileName);
+  return resolveLocalStoreDbPath(defaultDbFileName, "LOOPOVER_MINER_GOVERNOR_LEDGER_DB", env);
 }
 
 function normalizeDbPath(dbPath) {
-  const path = (dbPath ?? resolveGovernorLedgerDbPath()).trim();
-  if (!path) throw new Error("invalid_governor_ledger_db_path");
-  return path;
+  return normalizeLocalStoreDbPath(dbPath, resolveGovernorLedgerDbPath(), "invalid_governor_ledger_db_path");
 }
 
 function normalizeOptionalRepoFullName(repoFullName) {

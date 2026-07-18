@@ -1,6 +1,4 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { openLocalStoreDb } from "./local-store.js";
+import { normalizeLocalStoreDbPath, openLocalStoreDb, resolveLocalStoreDbPath } from "./local-store.js";
 import { applySchemaMigrations } from "./schema-version.js";
 
 // Local SQLite persistence for the stateless MCP plan DAG (#2318). `loopover_build_plan`/`plan_status`/
@@ -20,26 +18,11 @@ const defaultDbFileName = "plan-store.sqlite3";
 let defaultPlanStore = null;
 
 export function resolvePlanStoreDbPath(env = process.env) {
-  const explicitPath = typeof env.LOOPOVER_MINER_PLAN_STORE_DB === "string"
-    ? env.LOOPOVER_MINER_PLAN_STORE_DB.trim()
-    : "";
-  if (explicitPath) return explicitPath;
-
-  const explicitConfigDir = typeof env.LOOPOVER_MINER_CONFIG_DIR === "string"
-    ? env.LOOPOVER_MINER_CONFIG_DIR.trim()
-    : "";
-  if (explicitConfigDir) return join(explicitConfigDir, defaultDbFileName);
-
-  const configHome = typeof env.XDG_CONFIG_HOME === "string" && env.XDG_CONFIG_HOME.trim()
-    ? env.XDG_CONFIG_HOME.trim()
-    : join(homedir(), ".config");
-  return join(configHome, "loopover-miner", defaultDbFileName);
+  return resolveLocalStoreDbPath(defaultDbFileName, "LOOPOVER_MINER_PLAN_STORE_DB", env);
 }
 
 function normalizeDbPath(dbPath) {
-  const raw = dbPath ?? resolvePlanStoreDbPath();
-  if (typeof raw !== "string" || !raw.trim()) throw new Error("invalid_plan_store_db_path");
-  return raw.trim();
+  return normalizeLocalStoreDbPath(dbPath, resolvePlanStoreDbPath(), "invalid_plan_store_db_path");
 }
 
 function normalizePlanId(planId) {
