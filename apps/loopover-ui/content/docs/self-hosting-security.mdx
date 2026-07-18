@@ -20,7 +20,7 @@ description: The self-host stack holds maintainer credentials and policy. Keep t
     {
       title: "Rotate deliberately",
       description:
-        "Rotate GitHub webhook secrets, API tokens, REES secrets, and provider keys with a restart window and validation PR.",
+        "Cadence, per-secret procedure, and the categories that can't be rotated safely yet -- see \"Secret rotation policy\" below.",
     },
   ]}
 />
@@ -33,6 +33,65 @@ description: The self-host stack holds maintainer credentials and policy. Keep t
 cp /path/to/your-downloaded-key.pem secrets/github_app_private_key.pem   # the one it can't generate for you
 docker compose up -d --no-deps loopover`}
 />
+
+## Secret rotation policy (#4925)
+
+**Cadence:** rotate every secret at least once a year. **Rotate immediately**, regardless of
+cadence, on suspected compromise, a secret appearing in a log/commit/screenshot/PR even briefly,
+or the departure of anyone who held it.
+
+Not every secret rotates the same way — some are a same-day config change, others require an
+external console, and one category currently has **no safe rotation path at all**. Check which
+category a secret falls into before rotating it.
+
+<FeatureRow
+  items={[
+    {
+      title: "Freely rotatable",
+      description:
+        "GITHUB_WEBHOOK_SECRET, LOOPOVER_API_TOKEN, LOOPOVER_MCP_TOKEN, INTERNAL_JOB_TOKEN, SELFHOST_SETUP_TOKEN, REES_SHARED_SECRET. Static bearer comparisons -- nothing is encrypted with them. Generate a new value, restart both sides. Only cost: updating callers holding the old value.",
+    },
+    {
+      title: "Externally issued",
+      description:
+        "GITHUB_APP_PRIVATE_KEY, GITHUB_OAUTH_CLIENT_SECRET, PAGERDUTY_ROUTING_KEY, CLAUDE_CODE_OAUTH_TOKEN, and AI-provider API keys. Rotate at the source (GitHub App/OAuth settings, PagerDuty, `claude setup-token`, the provider's own console), then update the stored value.",
+    },
+    {
+      title: "Encryption master keys -- do not rotate routinely",
+      description:
+        "TOKEN_ENCRYPTION_SECRET, DRAFT_TOKEN_ENCRYPTION_SECRET. Swapping either makes every row already encrypted under the old value permanently undecryptable -- there is no re-encryption tooling today. Only rotate on suspected compromise; see below.",
+    },
+  ]}
+/>
+
+<CodeBlock
+  filename="shell"
+  code={`# Freely rotatable secret -- self-host path
+rm secrets/loopover_api_token.txt && ./scripts/selfhost-init-secrets.sh   # generates a fresh value
+docker compose up -d --no-deps loopover
+
+# Freely rotatable secret -- hosted Worker path
+wrangler secret put LOOPOVER_API_TOKEN
+# then redeploy`}
+/>
+
+<Callout variant="warn" title="Encryption master keys have no safe rotation path yet">
+  `TOKEN_ENCRYPTION_SECRET` (maintainer BYOK AI-provider keys at rest) and
+  `DRAFT_TOKEN_ENCRYPTION_SECRET` (in-flight contributor draft OAuth tokens) are AES-256-GCM keys
+  every already-encrypted row was written against. The decrypt path always derives the AES key
+  from whatever value is currently set, with no fallback to a prior value -- there is no
+  re-encryption tooling in this codebase today. Rotating `TOKEN_ENCRYPTION_SECRET` means every
+  maintainer who saved a BYOK provider key has to re-enter it; rotating
+  `DRAFT_TOKEN_ENCRYPTION_SECRET` fails any draft submission mid-flight. Only rotate these two on
+  suspected compromise, and treat the resulting key/token loss as an accepted, unavoidable cost
+  until a re-encrypt-in-place migration exists (tracked as separate follow-up work).
+</Callout>
+
+`ORB_ENROLLMENT_SECRET` has the same gap from the other direction: `orb_enrollments.revoked_at` is
+checked on every brokered-token/relay request, but nothing in this codebase currently sets it —
+there is no revoke or re-enrollment endpoint yet. Treat a brokered self-host's enrollment secret as
+not currently rotatable in place; escalate a suspected-compromised enrollment to the Orb operator
+directly instead of expecting self-service rotation.
 
 ## Optional: Infisical secrets management
 
