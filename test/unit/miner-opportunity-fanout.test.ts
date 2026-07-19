@@ -8,6 +8,7 @@ vi.mock("@loopover/engine", async () => {
 import {
   fetchCandidateIssues,
   fetchCandidateIssuesWithSummary,
+  searchCandidateIssues,
   searchCandidateIssuesWithSummary,
 } from "../../packages/loopover-miner/lib/opportunity-fanout.js";
 
@@ -419,5 +420,237 @@ describe("fetchCandidateIssues (#2307)", () => {
     expect(timeoutSpy.mock.calls.length).toBeGreaterThan(0);
     expect(timeoutSpy.mock.calls.every(([ms]) => ms === 10_000)).toBe(true);
     timeoutSpy.mockRestore();
+  });
+
+  it("tolerates non-array targets and malformed target entries, making zero requests for zero valid targets", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const fromNonArray = await fetchCandidateIssuesWithSummary("not-an-array" as never, "token", { apiBaseUrl: API });
+    expect(fromNonArray.issues).toEqual([]);
+
+    const fromMalformedEntries = await fetchCandidateIssuesWithSummary(
+      [{ owner: 123, repo: null }, {}, { owner: "acme" }] as never,
+      "token",
+      { apiBaseUrl: API },
+    );
+    expect(fromMalformedEntries.issues).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("omits the Authorization header when githubToken is not a string", async () => {
+    const authorizations: Array<string | null | undefined> = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      authorizations.push(
+        init?.headers instanceof Headers
+          ? init.headers.get("authorization")
+          : (init?.headers as Record<string, string> | undefined)?.authorization,
+      );
+      const url = String(input);
+      if (url.endsWith("/contents/AI-USAGE.md")) return jsonResponse({}, { status: 404 });
+      if (url.endsWith("/contents/CONTRIBUTING.md")) return contentResponse("Contributions welcome.");
+      if (url.includes("/issues?")) return jsonResponse([issue(1)]);
+      return jsonResponse({}, { status: 404 });
+    });
+
+    await fetchCandidateIssues([{ owner: "acme", repo: "widgets" }], undefined as never, { apiBaseUrl: API });
+
+    expect(authorizations.every((value) => value == null)).toBe(true);
+  });
+
+  it("tolerates a non-numeric x-ratelimit-remaining header (never records a NaN budget)", async () => {
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      // "unknown" -> Number("unknown") is NaN, so Number.isFinite(remaining) is false -- unlike a genuinely
+      // ABSENT header, where headers.get() returns null and Number(null) is 0 (finite), not NaN.
+      const headers = { "x-ratelimit-remaining": "unknown" };
+      if (url.endsWith("/contents/AI-USAGE.md")) return Response.json({}, { status: 404, headers });
+      if (url.endsWith("/contents/CONTRIBUTING.md")) return contentResponse("Contributions welcome.");
+      if (url.includes("/issues?")) return Response.json([issue(3)], { headers });
+      return Response.json({}, { status: 404, headers });
+    });
+
+    const result = await fetchCandidateIssuesWithSummary([{ owner: "acme", repo: "widgets" }], "token", {
+      apiBaseUrl: API,
+    });
+
+    // CONTRIBUTING.md's response (contentResponse) DOES carry a real numeric remaining (42) -- proving the
+    // "unknown" responses were skipped rather than poisoning the running minimum with NaN.
+    expect(result.rateLimitRemaining).toBe(42);
+  });
+
+  it("treats a malformed (array, not object) policy-doc payload as absent content, and passes through non-base64-encoded content unchanged", async () => {
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      // A malformed AI-USAGE.md payload (array, not `{content, encoding}`) decodes to null content -> falls
+      // through to CONTRIBUTING.md, whose content here is NOT base64-encoded (encoding: "none").
+      if (url.endsWith("/contents/AI-USAGE.md")) return jsonResponse([1, 2, 3]);
+      if (url.endsWith("/contents/CONTRIBUTING.md")) {
+        return jsonResponse({ type: "file", encoding: "none", content: "Contributions welcome, AI included." });
+      }
+      if (url.includes("/issues?")) return jsonResponse([issue(5)]);
+      return jsonResponse({}, { status: 404 });
+    });
+
+    const result = await fetchCandidateIssues([{ owner: "acme", repo: "widgets" }], "token", { apiBaseUrl: API });
+
+    expect(result.map((entry) => entry.issueNumber)).toEqual([5]);
+    expect(result[0]?.aiPolicySource).toBe("CONTRIBUTING.md");
+  });
+
+  it("normalizes a non-Error thrown while fetching a policy doc to a generic warning message, still falling through", async () => {
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/contents/AI-USAGE.md")) throw "boom"; // eslint-disable-line no-throw-literal -- deliberately non-Error
+      if (url.endsWith("/contents/CONTRIBUTING.md")) return contentResponse("Contributions welcome.");
+      if (url.includes("/issues?")) return jsonResponse([issue(9)]);
+      return jsonResponse({}, { status: 404 });
+    });
+
+    const result = await fetchCandidateIssuesWithSummary([{ owner: "acme", repo: "widgets" }], "token", {
+      apiBaseUrl: API,
+    });
+
+    expect(result.warnings).toEqual([
+      { repoFullName: "acme/widgets", stage: "policy:AI-USAGE.md", message: "policy fetch failed" },
+    ]);
+    expect(result.issues.map((entry) => entry.issueNumber)).toEqual([9]);
+  });
+
+  it("normalizes a non-Error thrown while listing issues to a generic warning message", async () => {
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/contents/AI-USAGE.md")) return jsonResponse({}, { status: 404 });
+      if (url.endsWith("/contents/CONTRIBUTING.md")) return contentResponse("Contributions welcome.");
+      if (url.includes("/issues?")) throw { code: "ECONNRESET" }; // eslint-disable-line no-throw-literal -- deliberately non-Error
+      return jsonResponse({}, { status: 404 });
+    });
+
+    const result = await fetchCandidateIssuesWithSummary([{ owner: "acme", repo: "widgets" }], "token", {
+      apiBaseUrl: API,
+    });
+
+    expect(result.warnings).toEqual([{ repoFullName: "acme/widgets", stage: "issues", message: "issue fetch failed" }]);
+  });
+
+  it("drops malformed issue entries and defaults every optional field a minimal-but-valid entry omits", async () => {
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/contents/AI-USAGE.md")) return jsonResponse({}, { status: 404 });
+      if (url.endsWith("/contents/CONTRIBUTING.md")) return contentResponse("Contributions welcome.");
+      if (url.includes("/issues?")) {
+        return jsonResponse([
+          { number: 0, title: "Invalid number (<= 0)" },
+          { number: 5, title: "" }, // blank title
+          { number: 6, title: "Minimal issue" }, // no labels/assignees/comments/created_at/updated_at/html_url
+        ]);
+      }
+      return jsonResponse({}, { status: 404 });
+    });
+
+    const result = await fetchCandidateIssues([{ owner: "acme", repo: "widgets" }], "token", { apiBaseUrl: API });
+
+    expect(result).toEqual([
+      {
+        owner: "acme",
+        repo: "widgets",
+        repoFullName: "acme/widgets",
+        issueNumber: 6,
+        title: "Minimal issue",
+        labels: [],
+        assignees: [],
+        commentsCount: 0,
+        createdAt: null,
+        updatedAt: null,
+        htmlUrl: null,
+        aiPolicyAllowed: true,
+        aiPolicySource: "CONTRIBUTING.md",
+      },
+    ]);
+  });
+
+  it("returns no results for a blank/whitespace-only search query, without ever calling fetch", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await searchCandidateIssuesWithSummary("   ", "token", { apiBaseUrl: API });
+
+    expect(result.issues).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("returns no results for a non-string search query, without ever calling fetch", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await searchCandidateIssuesWithSummary(undefined as never, "token", { apiBaseUrl: API });
+
+    expect(result.issues).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("normalizes a non-Error thrown while searching to a generic warning message", async () => {
+    vi.stubGlobal("fetch", async () => {
+      throw "search boom"; // eslint-disable-line no-throw-literal -- deliberately non-Error
+    });
+
+    const result = await searchCandidateIssuesWithSummary("label:bug", "token", { apiBaseUrl: API });
+
+    expect(result.warnings).toEqual([{ repoFullName: "*", stage: "search", message: "issue search failed" }]);
+  });
+
+  it("resolves a search hit whose repository.full_name is malformed via its html_url fallback instead", async () => {
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/search/issues?")) {
+        return jsonResponse({
+          items: [
+            {
+              ...issue(60),
+              repository: { full_name: "no-slash-here" }, // malformed: no "/", falls through to html_url
+              html_url: "https://github.com/acme/widgets/issues/60",
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/contents/AI-USAGE.md")) return jsonResponse({}, { status: 404 });
+      if (url.endsWith("/contents/CONTRIBUTING.md")) return contentResponse("Contributions welcome.");
+      return jsonResponse({}, { status: 404 });
+    });
+
+    const result = await searchCandidateIssuesWithSummary("label:bug", "token", { apiBaseUrl: API });
+
+    expect(result.issues.map((entry) => [entry.repoFullName, entry.issueNumber])).toEqual([["acme/widgets", 60]]);
+  });
+
+  it("silently drops a search hit with no full_name, no matching repository_url, and no html_url at all", async () => {
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/search/issues?")) {
+        return jsonResponse({ items: [{ number: 61, title: "Unresolvable target" }] });
+      }
+      return jsonResponse({}, { status: 404 });
+    });
+
+    const result = await searchCandidateIssuesWithSummary("label:bug", "token", { apiBaseUrl: API });
+
+    expect(result.issues).toEqual([]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("searchCandidateIssues returns just the issues array, defaulting options when omitted", async () => {
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/search/issues?")) {
+        return jsonResponse({ items: [{ ...issue(70), repository: { full_name: "acme/widgets" } }] });
+      }
+      if (url.endsWith("/contents/AI-USAGE.md")) return jsonResponse({}, { status: 404 });
+      if (url.endsWith("/contents/CONTRIBUTING.md")) return contentResponse("Contributions welcome.");
+      return jsonResponse({}, { status: 404 });
+    });
+
+    const result = await searchCandidateIssues("label:bug", "token");
+
+    expect(result.map((entry) => entry.issueNumber)).toEqual([70]);
   });
 });

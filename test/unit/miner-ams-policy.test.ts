@@ -94,4 +94,25 @@ describe("resolveAmsPolicy (#5132)", () => {
     expect(result).toEqual({ spec: DEFAULT_AMS_POLICY_SPEC, source: "default", warnings: [] });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  it("treats a readFileSync that throws (e.g. a race where the file vanishes after existsSync) the same as absent", async () => {
+    const root = tempRoot();
+    const readFileSync = () => {
+      throw new Error("EACCES: permission denied");
+    };
+    const result = await resolveAmsPolicy("acme/widgets", {
+      env: { LOOPOVER_MINER_CONFIG_DIR: root },
+      existsSync: () => true,
+      readFileSync,
+    });
+    expect(result).toEqual({ spec: DEFAULT_AMS_POLICY_SPEC, source: "default", warnings: [] });
+  });
+
+  it("defaults env to process.env when no env override is supplied", async () => {
+    // No LOOPOVER_MINER_AMS_POLICY_PATH/LOOPOVER_MINER_CONFIG_DIR/XDG_CONFIG_HOME override set for this test
+    // process, so this exercises the real `options.env ?? process.env` default path and resolves to the real
+    // (almost certainly absent, on a test machine) `~/.config/loopover-miner/.loopover-ams.yml`.
+    const result = await resolveAmsPolicy("acme/widgets", { existsSync: () => false });
+    expect(result).toEqual({ spec: DEFAULT_AMS_POLICY_SPEC, source: "default", warnings: [] });
+  });
 });

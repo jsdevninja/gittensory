@@ -2,12 +2,15 @@ import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   PLAN_STATUSES,
   closeDefaultPlanStore,
+  listPlans,
+  loadPlan,
   openPlanStore,
   resolvePlanStoreDbPath,
+  savePlan,
 } from "../../packages/loopover-miner/lib/plan-store.js";
 import type { PlanDag } from "../../packages/loopover-miner/lib/plan-store.js";
 import { readSchemaVersion } from "../../packages/loopover-miner/lib/schema-version.js";
@@ -26,6 +29,7 @@ function tempStore() {
 afterEach(() => {
   for (const store of stores.splice(0)) store.close();
   closeDefaultPlanStore();
+  vi.unstubAllEnvs();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
@@ -92,6 +96,41 @@ describe("loopover-miner plan store (#2318)", () => {
     expect(store.listPlans({ status: null }).map((record) => record.planId)).toEqual(["a", "b"]);
   });
 
+  it("derives 'failed' status once any step failed, even alongside other statuses", () => {
+    const store = tempStore();
+    const saved = store.savePlan("failed-plan", {
+      steps: [
+        { id: "a", title: "A", dependsOn: [], status: "completed", attempts: 1, maxAttempts: 1 },
+        { id: "b", title: "B", dependsOn: [], status: "failed", attempts: 1, maxAttempts: 1 },
+      ],
+    });
+    expect(saved.status).toBe("failed");
+  });
+
+  it("derives 'pending' status when no step is failed/running and not every step is finished", () => {
+    const store = tempStore();
+    const saved = store.savePlan("pending-plan", {
+      steps: [
+        { id: "a", title: "A", dependsOn: [], status: "completed", attempts: 1, maxAttempts: 1 },
+        { id: "b", title: "B", dependsOn: [], status: "pending", attempts: 0, maxAttempts: 1 },
+      ],
+    });
+    expect(saved.status).toBe("pending");
+  });
+
+  it("exposes module-level savePlan/loadPlan/listPlans helpers backed by the default DB path", () => {
+    const root = mkdtempSync(join(tmpdir(), "loopover-miner-plan-store-default-"));
+    roots.push(root);
+    vi.stubEnv("LOOPOVER_MINER_PLAN_STORE_DB", join(root, "default.sqlite3"));
+
+    expect(loadPlan("p1")).toBeNull();
+    const saved = savePlan("p1", PLAN);
+    expect(saved.planId).toBe("p1");
+    expect(loadPlan("p1")?.plan).toEqual(PLAN);
+    expect(listPlans().map((record) => record.planId)).toEqual(["p1"]);
+    expect(listPlans({ status: "running" }).map((record) => record.planId)).toEqual(["p1"]);
+  });
+
   it("rejects a malformed plan on save rather than persisting it", () => {
     const store = tempStore();
     expect(() => store.savePlan("x", { steps: [{ id: "s1", title: "no status", dependsOn: [], attempts: 0, maxAttempts: 1 } as never] })).toThrow("invalid_plan");
@@ -107,6 +146,36 @@ describe("loopover-miner plan store (#2318)", () => {
         ],
       }),
     ).toThrow("invalid_plan");
+  });
+
+  it("rejects a plan that is itself null, a non-object, or an array", () => {
+    const store = tempStore();
+    expect(() => store.savePlan("x", null as never)).toThrow("invalid_plan");
+    expect(() => store.savePlan("x", "nope" as never)).toThrow("invalid_plan");
+    expect(() => store.savePlan("x", [] as never)).toThrow("invalid_plan");
+  });
+
+  it("rejects every individually-malformed step field on save", () => {
+    const store = tempStore();
+    const valid = { id: "a", title: "A", dependsOn: [] as string[], status: "pending" as const, attempts: 0, maxAttempts: 1 };
+    // A non-object step (e.g. a bare string) in the steps array.
+    expect(() => store.savePlan("x", { steps: ["not-an-object" as never] })).toThrow("invalid_plan");
+    // Invalid id/title.
+    expect(() => store.savePlan("x", { steps: [{ ...valid, id: "" }] })).toThrow("invalid_plan");
+    expect(() => store.savePlan("x", { steps: [{ ...valid, title: "" }] })).toThrow("invalid_plan");
+    // Invalid actionClass (present but out-of-bounds).
+    expect(() => store.savePlan("x", { steps: [{ ...valid, actionClass: "" }] })).toThrow("invalid_plan");
+    // dependsOn not an array, and dependsOn with a non-string entry.
+    expect(() => store.savePlan("x", { steps: [{ ...valid, dependsOn: "nope" as never }] })).toThrow("invalid_plan");
+    expect(() => store.savePlan("x", { steps: [{ ...valid, dependsOn: [1 as never] }] })).toThrow("invalid_plan");
+    // Invalid attempts/maxAttempts.
+    expect(() => store.savePlan("x", { steps: [{ ...valid, attempts: -1 }] })).toThrow("invalid_plan");
+    expect(() => store.savePlan("x", { steps: [{ ...valid, maxAttempts: 0 }] })).toThrow("invalid_plan");
+    // Invalid lastError (present but out-of-bounds type).
+    expect(() => store.savePlan("x", { steps: [{ ...valid, lastError: 123 as never }] })).toThrow("invalid_plan");
+    // A well-formed lastError (string, or explicit null) is accepted.
+    expect(() => store.savePlan("x", { steps: [{ ...valid, lastError: "boom" }] })).not.toThrow();
+    expect(() => store.savePlan("y", { steps: [{ ...valid, lastError: null }] })).not.toThrow();
   });
 
   it("rejects unknown or self-referential dependsOn entries on save", () => {
