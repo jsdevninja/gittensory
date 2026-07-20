@@ -771,7 +771,7 @@ export async function startFixtureServer(
         response.end(JSON.stringify({ error: "skipped_pr_audit_unavailable" }));
         return;
       }
-      response.end(JSON.stringify({ generatedAt: "2026-05-30T00:00:00.000Z", limit: 20, hasMore: false, items: [{ prNumber: 7, reason: "duplicate", remediation: "link the canonical PR" }] }));
+      response.end(JSON.stringify({ generatedAt: "2026-05-30T00:00:00.000Z", limit: 20, offset: 0, total: 1, hasMore: false, items: [{ prNumber: 7, reason: "duplicate", remediation: "link the canonical PR" }] }));
       return;
     }
     // #6750: the boundary-tests lint mirror proxies here; echo a fired finding + spec.

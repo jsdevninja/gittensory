@@ -11061,11 +11061,21 @@
                 "remediation"
               ]
             }
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
           "generatedAt",
           "limit",
+          "offset",
+          "total",
           "hasMore",
           "filters",
           "items"
@@ -17892,8 +17902,18 @@
               "example": "50"
             },
             "required": false,
-            "description": "Maximum rows to return, clamped from 1 to 100.",
+            "description": "Maximum rows to return per page, clamped from 1 to 100.",
             "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "0"
+            },
+            "required": false,
+            "description": "Zero-based row offset for pagination. Advance by `limit` (or the previous page's item count) and append; do not grow `limit` to page.",
+            "name": "offset",
             "in": "query"
           },
           {
@@ -17909,6 +17929,7 @@
           {
             "schema": {
               "type": "string",
+              "example": "not_official_gittensor_miner",
               "enum": [
                 "surface_off",
                 "missing_author",
@@ -17917,8 +17938,7 @@
                 "maintainer_author",
                 "miner_detection_unavailable",
                 "not_official_gittensor_miner"
-              ],
-              "example": "not_official_gittensor_miner"
+              ]
             },
             "required": false,
             "description": "Optional PR skip reason filter.",

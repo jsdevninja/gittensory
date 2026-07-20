@@ -1199,8 +1199,12 @@ export function buildOpenApiSpec() {
     request: {
       query: z.object({
         limit: z.string().optional().openapi({
-          param: { description: "Maximum rows to return, clamped from 1 to 100." },
+          param: { description: "Maximum rows to return per page, clamped from 1 to 100." },
           example: "50",
+        }),
+        offset: z.string().optional().openapi({
+          param: { description: "Zero-based row offset for pagination. Advance by `limit` (or the previous page's item count) and append; do not grow `limit` to page." },
+          example: "0",
         }),
         repoFullName: z.string().optional().openapi({
           param: { description: "Optional repository filter. Browser sessions must have control-panel access to this repo." },

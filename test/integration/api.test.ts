@@ -4476,11 +4476,15 @@ describe("api routes", () => {
     expect(bounded.status).toBe(200);
     const boundedBody = (await bounded.json()) as {
       limit: number;
+      offset: number;
+      total: number;
       hasMore: boolean;
       items: Array<{ repoFullName: string; pullNumber: number; reason: string; timestamp: string; remediation: string }>;
     };
     expect(boundedBody.limit).toBe(3);
+    expect(boundedBody.offset).toBe(0);
     expect(boundedBody.hasMore).toBe(true);
+    expect(boundedBody.total).toBeGreaterThan(3);
     expect(boundedBody.items).toEqual([
       expect.objectContaining({ repoFullName: "victim-org/secret-repo", pullNumber: 7, reason: "maintainer_author" }),
       expect.objectContaining({ repoFullName: "repo-owner/owned-repo", pullNumber: 6, reason: "surface_off" }),
@@ -4488,6 +4492,23 @@ describe("api routes", () => {
     ]);
     expect(boundedBody.items[1]?.remediation).toContain("repository settings");
     expect(JSON.stringify(boundedBody)).not.toMatch(/private-author|bot-secret|detector-secret|surface-secret|victim-secret|delivery-secret|github_pat|wallet|hotkey|raw trust/i);
+
+    // #7438: offset pages into older rows without re-fetching the head of the feed.
+    const page2 = await app.request("/v1/app/skipped-pr-audit?limit=3&offset=3", { headers: apiHeaders(env) }, env);
+    expect(page2.status).toBe(200);
+    const page2Body = (await page2.json()) as {
+      offset: number;
+      hasMore: boolean;
+      items: Array<{ pullNumber: number }>;
+    };
+    expect(page2Body.offset).toBe(3);
+    expect(page2Body.items).toHaveLength(3);
+    expect(page2Body.items.map((item) => item.pullNumber)).not.toEqual(
+      boundedBody.items.map((item) => item.pullNumber),
+    );
+    const omittedOffset = await app.request("/v1/app/skipped-pr-audit?limit=1", { headers: apiHeaders(env) }, env);
+    expect(omittedOffset.status).toBe(200);
+    await expect(omittedOffset.json()).resolves.toMatchObject({ offset: 0, limit: 1 });
 
     const reasonFiltered = await app.request("/v1/app/skipped-pr-audit?reason=bot_author&limit=500", { headers: apiHeaders(env) }, env);
     expect(reasonFiltered.status).toBe(200);

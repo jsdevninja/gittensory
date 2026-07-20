@@ -49,13 +49,14 @@ describe("skipped PR audit repository export", () => {
     });
 
     const emptyScope = await listPrVisibilitySkipAuditEvents(env, { repoFullNames: [] });
-    expect(emptyScope).toMatchObject({ limit: 50, hasMore: false, items: [] });
+    expect(emptyScope).toMatchObject({ limit: 50, offset: 0, hasMore: false, total: 0, items: [] });
 
     const scoped = await listPrVisibilitySkipAuditEvents(env, {
       limit: Number.NaN,
       repoFullNames: ["owner/re_po", "OWNER/re_po"],
     });
     expect(scoped.limit).toBe(1);
+    expect(scoped.offset).toBe(0);
     expect(scoped.items).toEqual([
       {
         repoFullName: "owner/re_po",
@@ -68,6 +69,28 @@ describe("skipped PR audit repository export", () => {
 
     const unscoped = await listPrVisibilitySkipAuditEvents(env);
     expect(unscoped.limit).toBe(50);
+    expect(unscoped.offset).toBe(0);
     expect(unscoped.items.map((item) => item.pullNumber)).toEqual([8, 7]);
+    expect(unscoped.total).toBeGreaterThanOrEqual(2);
+
+    // #7438: offset advances into the next page instead of growing limit from the start.
+    const page0 = await listPrVisibilitySkipAuditEvents(env, { limit: 1, offset: 0 });
+    const page1 = await listPrVisibilitySkipAuditEvents(env, { limit: 1, offset: 1 });
+    expect(page0.items).toHaveLength(1);
+    expect(page0.hasMore).toBe(true);
+    expect(page0.offset).toBe(0);
+    expect(page1.items).toHaveLength(1);
+    expect(page1.offset).toBe(1);
+    expect(page1.items[0]?.pullNumber).not.toBe(page0.items[0]?.pullNumber);
+    expect(page1.items[0]?.pullNumber).toBe(7);
+
+    const pastEnd = await listPrVisibilitySkipAuditEvents(env, { limit: 10, offset: 50 });
+    expect(pastEnd.items).toEqual([]);
+    expect(pastEnd.hasMore).toBe(false);
+    expect(pastEnd.offset).toBe(50);
+
+    const negativeOffset = await listPrVisibilitySkipAuditEvents(env, { limit: 10, offset: -5 });
+    expect(negativeOffset.offset).toBe(0);
+    expect(negativeOffset.items.map((item) => item.pullNumber)).toEqual([8, 7]);
   });
 });

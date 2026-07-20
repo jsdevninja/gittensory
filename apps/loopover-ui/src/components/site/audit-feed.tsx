@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
 
 import {
+  appendSkippedPrAuditPage,
+  AUDIT_FEED_MAX_ITEMS,
+  AUDIT_FEED_PAGE_SIZE,
   buildSkippedPrAuditPath,
   formatAuditTimestamp,
   formatSkipReason,
@@ -28,9 +31,6 @@ import { apiFetch } from "@/lib/api/request";
 const fieldClass =
   "mt-1 w-full rounded-token border border-border bg-background/40 px-3 py-2 text-token-sm text-foreground focus-ring";
 
-const DEFAULT_LIMIT = 50;
-const MAX_LIMIT = 100;
-
 type AuditFeedProps = {
   enabled?: boolean;
 };
@@ -41,20 +41,23 @@ export function AuditFeed({ enabled = true }: AuditFeedProps) {
   const [repoFullName, setRepoFullName] = useState("");
   const [sinceInput, setSinceInput] = useState("");
   const [sinceIso, setSinceIso] = useState("");
-  const [limit, setLimit] = useState(DEFAULT_LIMIT);
+  // #7438: page by advancing offset and appending — never grow `limit` and re-fetch from the start.
+  const [offset, setOffset] = useState(0);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<SkippedPrAuditExport | null>(null);
+  const loadGeneration = useRef(0);
 
   const queryPath = useMemo(
     () =>
       buildSkippedPrAuditPath({
-        limit,
+        limit: AUDIT_FEED_PAGE_SIZE,
+        offset,
         repoFullName: repoFullName || undefined,
         reason: reason || undefined,
         since: sinceIso || undefined,
       }),
-    [limit, reason, repoFullName, sinceIso],
+    [offset, reason, repoFullName, sinceIso],
   );
 
   const load = useCallback(async () => {
@@ -64,6 +67,7 @@ export function AuditFeed({ enabled = true }: AuditFeedProps) {
       setData(null);
       return;
     }
+    const generation = ++loadGeneration.current;
     setStatus("loading");
     setError(null);
     const origin = getApiOrigin().replace(/\/$/, "");
@@ -72,31 +76,34 @@ export function AuditFeed({ enabled = true }: AuditFeedProps) {
       credentials: "include",
       headers: { Accept: "application/json" },
     });
+    if (generation !== loadGeneration.current) return;
     if (result.ok) {
       const normalized = normalizeSkippedPrAuditExport(result.data);
       if (!normalized) {
-        setData(null);
+        if (offset === 0) setData(null);
         setError("The skipped PR audit endpoint returned an unexpected response.");
         setStatus("error");
         return;
       }
-      setData(normalized);
+      setData((current) => appendSkippedPrAuditPage(current, normalized));
       setStatus("ready");
       return;
     }
-    setData(null);
+    if (offset === 0) setData(null);
     setError(result.message);
     setStatus("error");
-  }, [enabled, queryPath]);
+  }, [enabled, offset, queryPath]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  const resetPaging = () => setOffset(0);
+
   const applyFilters = () => {
     setSinceIso(normalizeSinceInput(sinceInput));
     setRepoFullName(repoDraft.trim());
-    setLimit(DEFAULT_LIMIT);
+    resetPaging();
   };
 
   const resetFilters = () => {
@@ -105,11 +112,20 @@ export function AuditFeed({ enabled = true }: AuditFeedProps) {
     setRepoFullName("");
     setSinceInput("");
     setSinceIso("");
-    setLimit(DEFAULT_LIMIT);
+    resetPaging();
   };
 
   const loadMore = () => {
-    setLimit((current) => Math.min(current + DEFAULT_LIMIT, MAX_LIMIT));
+    setOffset((current) => current + AUDIT_FEED_PAGE_SIZE);
+  };
+
+  const refresh = () => {
+    if (offset === 0) {
+      void load();
+      return;
+    }
+    // Drop back to the first page so refresh replaces rather than appending a duplicate page.
+    resetPaging();
   };
 
   if (status === "loading" && !data) {
@@ -140,7 +156,7 @@ export function AuditFeed({ enabled = true }: AuditFeedProps) {
           sinceInput={sinceInput}
           onReasonChange={(value) => {
             setReason(value);
-            setLimit(DEFAULT_LIMIT);
+            resetPaging();
           }}
           onRepoDraftChange={setRepoDraft}
           onSinceInputChange={setSinceInput}
@@ -150,13 +166,16 @@ export function AuditFeed({ enabled = true }: AuditFeedProps) {
         <EmptyState
           title="No skipped PR events"
           description="When LoopOver intentionally skips public GitHub App output for a pull request, the decision appears here."
-          action={<StateActionButton onClick={() => void load()}>Refresh</StateActionButton>}
+          action={<StateActionButton onClick={refresh}>Refresh</StateActionButton>}
         />
       </div>
     );
   }
 
   if (!data) return null;
+
+  const canLoadMore =
+    data.hasMore && data.items.length < AUDIT_FEED_MAX_ITEMS && status !== "loading";
 
   return (
     <div className="space-y-6">
@@ -177,7 +196,7 @@ export function AuditFeed({ enabled = true }: AuditFeedProps) {
         sinceInput={sinceInput}
         onReasonChange={(value) => {
           setReason(value);
-          setLimit(DEFAULT_LIMIT);
+          resetPaging();
         }}
         onRepoDraftChange={setRepoDraft}
         onSinceInputChange={setSinceInput}
@@ -249,15 +268,14 @@ export function AuditFeed({ enabled = true }: AuditFeedProps) {
       </TableScroll>
 
       <div className="flex flex-wrap items-center gap-3">
-        {data.hasMore && limit < MAX_LIMIT ? (
-          <StateActionButton onClick={loadMore}>Load more</StateActionButton>
-        ) : null}
-        {data.hasMore && limit >= MAX_LIMIT ? (
+        {canLoadMore ? <StateActionButton onClick={loadMore}>Load more</StateActionButton> : null}
+        {data.hasMore && data.items.length >= AUDIT_FEED_MAX_ITEMS ? (
           <p className="text-token-xs text-muted-foreground">
-            Showing the maximum page size ({MAX_LIMIT}). Narrow filters to inspect older events.
+            Showing the maximum accumulated page size ({AUDIT_FEED_MAX_ITEMS}). Narrow filters to
+            inspect older events.
           </p>
         ) : null}
-        <StateActionButton onClick={() => void load()}>Refresh</StateActionButton>
+        <StateActionButton onClick={refresh}>Refresh</StateActionButton>
       </div>
     </div>
   );

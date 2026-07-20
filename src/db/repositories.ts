@@ -3191,7 +3191,9 @@ export type PrVisibilitySkipAuditEvent = {
 
 export type PrVisibilitySkipAuditPage = {
   limit: number;
+  offset: number;
   hasMore: boolean;
+  total: number;
   items: PrVisibilitySkipAuditEvent[];
 };
 
@@ -3199,14 +3201,20 @@ export async function listPrVisibilitySkipAuditEvents(
   env: Env,
   options: {
     limit?: number | undefined;
+    offset?: number | undefined;
     repoFullNames?: string[] | undefined;
     reason?: string | undefined;
     sinceIso?: string | undefined;
   } = {},
 ): Promise<PrVisibilitySkipAuditPage> {
   const limit = clampInteger(options.limit ?? 50, 1, 100);
+  // #7438: real offset pagination (not a growing limit). Floor at 0 so a negative query param cannot
+  // rewind into undefined territory; the UI advances by page size and appends.
+  const offset = Math.max(0, Math.floor(options.offset ?? 0));
   const scopedRepoNames = options.repoFullNames === undefined ? undefined : uniqueRepoNames(options.repoFullNames.map((name) => name.trim()).filter(Boolean));
-  if (scopedRepoNames !== undefined && scopedRepoNames.length === 0) return { limit, hasMore: false, items: [] };
+  if (scopedRepoNames !== undefined && scopedRepoNames.length === 0) {
+    return { limit, offset, hasMore: false, total: 0, items: [] };
+  }
 
   const conditions: SQL[] = [eq(auditEvents.eventType, "github_app.pr_visibility_skipped")];
   if (options.reason) conditions.push(eq(auditEvents.detail, options.reason));
@@ -3221,7 +3229,11 @@ export async function listPrVisibilitySkipAuditEvents(
     if (repoFilter) conditions.push(repoFilter);
   }
 
-  const rowLimit = Math.min(500, limit * 5 + 20);
+  const whereClause = and(...conditions);
+
+  // Over-fetch past offset+limit so unparsable targetKey rows (dropped below) don't shrink the page, and so
+  // we can tell whether another page exists after slicing.
+  const rowLimit = Math.min(500, (offset + limit) * 5 + 20);
   const rows = await getDb(env.DB)
     .select({
       targetKey: auditEvents.targetKey,
@@ -3230,7 +3242,7 @@ export async function listPrVisibilitySkipAuditEvents(
       createdAt: auditEvents.createdAt,
     })
     .from(auditEvents)
-    .where(and(...conditions))
+    .where(whereClause)
     .orderBy(desc(auditEvents.createdAt), desc(auditEvents.id))
     .limit(rowLimit);
   const items = rows.flatMap((row) => {
@@ -3246,7 +3258,13 @@ export async function listPrVisibilitySkipAuditEvents(
       },
     ];
   });
-  return { limit, hasMore: items.length > limit, items: items.slice(0, limit) };
+  const pageItems = items.slice(offset, offset + limit);
+  // hasMore is based on the parseable over-fetch window (not a raw audit-event COUNT, which can include
+  // unparsable targetKey rows and would leave Load more stuck on forever).
+  const hasMore = items.length > offset + limit;
+  // Lower-bound total when another page exists; exact when this is the last page (#7438 / DLQ-shaped response).
+  const total = hasMore ? offset + pageItems.length + 1 : offset + pageItems.length;
+  return { limit, offset, hasMore, total, items: pageItems };
 }
 
 /** Repo-scoped rollups of gate-outcome audit rows for the maintainer dashboard (#2203). Counts only

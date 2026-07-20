@@ -6,6 +6,7 @@ vi.mock("@/lib/api/request", () => ({ apiFetch: (...args: unknown[]) => apiFetch
 vi.mock("@/lib/api/origin", () => ({ getApiOrigin: () => "https://api.test" }));
 
 import {
+  appendSkippedPrAuditPage,
   buildSkippedPrAuditPath,
   formatSkipReason,
   normalizeSinceInput,
@@ -17,6 +18,8 @@ import { AuditFeed } from "@/components/site/audit-feed";
 const SAMPLE: {
   generatedAt: string;
   limit: number;
+  offset: number;
+  total: number;
   hasMore: boolean;
   filters: { repoFullName: null; reason: null; since: null };
   items: Array<{
@@ -29,6 +32,8 @@ const SAMPLE: {
 } = {
   generatedAt: "2026-05-28T00:00:05.000Z",
   limit: 50,
+  offset: 0,
+  total: 1,
   hasMore: false,
   filters: { repoFullName: null, reason: null, since: null },
   items: [
@@ -43,17 +48,23 @@ const SAMPLE: {
 };
 
 describe("audit feed helpers", () => {
-  it("builds query paths for skipped PR audit filters", () => {
-    expect(buildSkippedPrAuditPath({ limit: 25 })).toBe("/v1/app/skipped-pr-audit?limit=25");
+  it("builds query paths for skipped PR audit filters including offset (#7438)", () => {
+    expect(buildSkippedPrAuditPath({ limit: 25 })).toBe(
+      "/v1/app/skipped-pr-audit?limit=25&offset=0",
+    );
     expect(
       buildSkippedPrAuditPath({
         limit: 50,
+        offset: 50,
         repoFullName: "repo-owner/owned-repo",
         reason: "bot_author",
         since: "2026-05-28T00:00:00.000Z",
       }),
     ).toBe(
-      "/v1/app/skipped-pr-audit?limit=50&repoFullName=repo-owner%2Fowned-repo&reason=bot_author&since=2026-05-28T00%3A00%3A00.000Z",
+      "/v1/app/skipped-pr-audit?limit=50&offset=50&repoFullName=repo-owner%2Fowned-repo&reason=bot_author&since=2026-05-28T00%3A00%3A00.000Z",
+    );
+    expect(buildSkippedPrAuditPath({ limit: 10, offset: -3 })).toBe(
+      "/v1/app/skipped-pr-audit?limit=10&offset=0",
     );
   });
 
@@ -80,6 +91,13 @@ describe("audit feed helpers", () => {
     expect(normalizeSkippedPrAuditExport({ generatedAt: "2026-05-28T00:00:05.000Z" })).toBeNull();
     expect(
       normalizeSkippedPrAuditExport({
+        generatedAt: SAMPLE.generatedAt,
+        hasMore: true,
+        items: SAMPLE.items,
+      }),
+    ).toMatchObject({ offset: 0, total: 1, limit: 1 });
+    expect(
+      normalizeSkippedPrAuditExport({
         ...SAMPLE,
         items: [
           {
@@ -94,6 +112,35 @@ describe("audit feed helpers", () => {
         ],
       }),
     ).toMatchObject({ items: [{ repoFullName: "x/y", pullNumber: 1 }] });
+  });
+
+  it("REGRESSION (#7438): appends the next offset page instead of replacing already-visible rows", () => {
+    const page1 = {
+      ...SAMPLE,
+      hasMore: true,
+      total: 2,
+      items: [SAMPLE.items[0]!],
+    };
+    const page2 = {
+      ...SAMPLE,
+      offset: 50,
+      hasMore: false,
+      total: 2,
+      items: [
+        {
+          repoFullName: "repo-owner/owned-repo",
+          pullNumber: 5,
+          reason: "bot_author",
+          timestamp: "2026-05-28T00:00:03.000Z",
+          remediation: "Ignore bot authors in repository settings.",
+        },
+      ],
+    };
+    expect(appendSkippedPrAuditPage(null, page1)).toEqual(page1);
+    expect(appendSkippedPrAuditPage(page1, { ...page1, offset: 0, items: [] }).items).toEqual([]);
+    expect(appendSkippedPrAuditPage(page1, page2).items.map((item) => item.pullNumber)).toEqual([
+      6, 5,
+    ]);
   });
 });
 
@@ -111,7 +158,7 @@ describe("AuditFeed", () => {
       "https://github.com/repo-owner/owned-repo/pull/6",
     );
     expect(apiFetch).toHaveBeenCalledWith(
-      "https://api.test/v1/app/skipped-pr-audit?limit=50",
+      "https://api.test/v1/app/skipped-pr-audit?limit=50&offset=0",
       expect.objectContaining({ credentials: "include" }),
     );
   });
@@ -131,7 +178,7 @@ describe("AuditFeed", () => {
   });
 
   it("shows an empty state when the audit export has no items", async () => {
-    apiFetch.mockResolvedValue({ ok: true, data: { ...SAMPLE, items: [] } });
+    apiFetch.mockResolvedValue({ ok: true, data: { ...SAMPLE, items: [], total: 0 } });
     render(<AuditFeed />);
     expect(await screen.findByText("No skipped PR events")).toBeTruthy();
   });
@@ -160,6 +207,7 @@ describe("AuditFeed", () => {
         expect.any(Object),
       ),
     );
+    expect(apiFetch.mock.calls.some(([url]) => String(url).includes("offset=0"))).toBe(true);
   });
 
   it("ignores invalid since values when applying filters", async () => {
@@ -194,24 +242,45 @@ describe("AuditFeed", () => {
     expect(apiFetch).not.toHaveBeenCalled();
   });
 
-  it("loads more rows until the maximum page size", async () => {
-    apiFetch.mockResolvedValue({ ok: true, data: { ...SAMPLE, hasMore: true } });
+  it("REGRESSION (#7438): Load more advances offset and appends rows instead of growing limit", async () => {
+    const firstPage = {
+      ...SAMPLE,
+      hasMore: true,
+      total: 2,
+      items: [SAMPLE.items[0]!],
+    };
+    const secondPage = {
+      ...SAMPLE,
+      offset: 50,
+      hasMore: false,
+      total: 2,
+      items: [
+        {
+          repoFullName: "repo-owner/owned-repo",
+          pullNumber: 5,
+          reason: "bot_author",
+          timestamp: "2026-05-28T00:00:03.000Z",
+          remediation: "Ignore bot authors in repository settings.",
+        },
+      ],
+    };
+    apiFetch.mockResolvedValueOnce({ ok: true, data: firstPage });
     render(<AuditFeed />);
-    await screen.findByText("repo-owner/owned-repo");
+    expect(await screen.findByText("#6")).toBeTruthy();
     apiFetch.mockClear();
-    apiFetch.mockResolvedValue({ ok: true, data: { ...SAMPLE, hasMore: true, limit: 100 } });
+    apiFetch.mockResolvedValueOnce({ ok: true, data: secondPage });
 
     fireEvent.click(screen.getByRole("button", { name: /load more/i }));
 
     await waitFor(() =>
       expect(apiFetch).toHaveBeenCalledWith(
-        "https://api.test/v1/app/skipped-pr-audit?limit=100",
+        "https://api.test/v1/app/skipped-pr-audit?limit=50&offset=50",
         expect.any(Object),
       ),
     );
-
-    expect(screen.getByText(/maximum page size \(100\)/i)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /load more/i })).toBeNull();
+    expect(await screen.findByText("#5")).toBeTruthy();
+    expect(screen.getByText("#6")).toBeTruthy();
+    expect(apiFetch.mock.calls.some(([url]) => String(url).includes("limit=100"))).toBe(false);
   });
 
   it("shows an error state when the audit response is malformed", async () => {

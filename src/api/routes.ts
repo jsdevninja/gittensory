@@ -672,6 +672,7 @@ const selfhostDeadLetterQueueQuerySchema = z
 const skippedPrAuditQuerySchema = z
   .object({
     limit: z.coerce.number().int().optional(),
+    offset: z.coerce.number().int().optional(),
     repoFullName: z.string().trim().min(3).max(200).optional(),
     reason: z.enum(PUBLIC_SURFACE_SKIP_REASONS).optional(),
     since: z.string().trim().min(1).max(64).optional(),
@@ -1725,6 +1726,7 @@ export function createApp() {
     if (repoFullNames instanceof Response) return repoFullNames;
     const page = await listPrVisibilitySkipAuditEvents(c.env, {
       limit: clampInteger(parsed.data.limit ?? 50, 1, 100),
+      offset: Math.max(0, parsed.data.offset ?? 0),
       repoFullNames,
       reason: parsed.data.reason,
       sinceIso,
@@ -1732,6 +1734,8 @@ export function createApp() {
     return c.json({
       generatedAt: nowIso(),
       limit: page.limit,
+      offset: page.offset,
+      total: page.total,
       hasMore: page.hasMore,
       filters: {
         repoFullName: requestedRepo ?? null,

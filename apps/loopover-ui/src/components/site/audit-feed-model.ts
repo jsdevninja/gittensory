@@ -17,6 +17,8 @@ export type SkippedPrAuditItem = {
 export type SkippedPrAuditExport = {
   generatedAt: string;
   limit: number;
+  offset: number;
+  total: number;
   hasMore: boolean;
   filters: {
     repoFullName: string | null;
@@ -36,14 +38,21 @@ export const SKIP_REASON_OPTIONS: Array<{ value: "" | SkippedPrAuditReason; labe
   { value: "not_official_gittensor_miner", label: "Not official Gittensor miner" },
 ];
 
+/** Page size for each skipped-PR audit request. Load more advances `offset` by this amount (#7438). */
+export const AUDIT_FEED_PAGE_SIZE = 50;
+/** Cap on how many rows the UI will accumulate client-side before asking the user to narrow filters. */
+export const AUDIT_FEED_MAX_ITEMS = 100;
+
 export function buildSkippedPrAuditPath(options: {
   limit: number;
+  offset?: number;
   repoFullName?: string;
   reason?: SkippedPrAuditReason;
   since?: string;
 }): string {
   const params = new URLSearchParams();
   params.set("limit", String(options.limit));
+  params.set("offset", String(Math.max(0, options.offset ?? 0)));
   if (options.repoFullName?.trim()) params.set("repoFullName", options.repoFullName.trim());
   if (options.reason) params.set("reason", options.reason);
   if (options.since?.trim()) params.set("since", options.since.trim());
@@ -83,6 +92,8 @@ export function normalizeSkippedPrAuditExport(data: unknown): SkippedPrAuditExpo
   return {
     generatedAt: raw.generatedAt,
     limit: typeof raw.limit === "number" ? raw.limit : items.length,
+    offset: typeof raw.offset === "number" ? raw.offset : 0,
+    total: typeof raw.total === "number" ? raw.total : items.length,
     hasMore: Boolean(raw.hasMore),
     filters: {
       repoFullName:
@@ -94,6 +105,18 @@ export function normalizeSkippedPrAuditExport(data: unknown): SkippedPrAuditExpo
       since: filters && typeof filters.since === "string" ? filters.since : null,
     },
     items,
+  };
+}
+
+/** Append a newly fetched page onto the already-rendered list without re-deriving prior rows (#7438). */
+export function appendSkippedPrAuditPage(
+  current: SkippedPrAuditExport | null,
+  nextPage: SkippedPrAuditExport,
+): SkippedPrAuditExport {
+  if (!current || nextPage.offset === 0) return nextPage;
+  return {
+    ...nextPage,
+    items: [...current.items, ...nextPage.items],
   };
 }
 
