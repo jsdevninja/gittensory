@@ -98,25 +98,33 @@ export function createFakeTenantProvisioningDriver(
     async destroyContainer(tenant, containerId) {
       const key = tenantKey(tenant);
       const current = containers.get(key);
-      if (!current || current.containerId !== containerId) return "absent";
+      if (!current) return "absent";
+      // When containerId is omitted, destroy whatever container this tenant still holds (lost-handle path).
+      if (containerId !== undefined && current.containerId !== containerId) return "absent";
       containers.delete(key);
       return "destroyed";
     },
     async destroyDatabase(tenant, databaseId) {
       const key = tenantKey(tenant);
       const current = databases.get(key);
-      if (!current || current.databaseId !== databaseId) return "absent";
+      if (!current) return "absent";
+      if (databaseId !== undefined && current.databaseId !== databaseId) return "absent";
       databases.delete(key);
       return "destroyed";
     },
     async revokeSecrets(tenant, enrollId) {
       const key = tenantKey(tenant);
       const current = secretsByTenant.get(key);
-      if (!current || current.enrollId !== enrollId) {
+      if (!current) {
+        if (enrollId === undefined) return "absent";
         const brokerResult = await broker.revokeEnrollment(enrollId);
         return brokerResult === "revoked" ? "revoked" : "absent";
       }
-      const brokerResult = await broker.revokeEnrollment(enrollId);
+      if (enrollId !== undefined && current.enrollId !== enrollId) {
+        const brokerResult = await broker.revokeEnrollment(enrollId);
+        return brokerResult === "revoked" ? "revoked" : "absent";
+      }
+      const brokerResult = await broker.revokeEnrollment(current.enrollId);
       secretsByTenant.delete(key);
       return brokerResult === "revoked" ? "revoked" : "absent";
     },

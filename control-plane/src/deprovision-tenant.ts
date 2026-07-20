@@ -1,5 +1,8 @@
 // `deprovisionTenant` orchestration (#7524 / #7180). Reverse of provision: revoke secrets → destroy DB →
 // destroy container. Destroy of a nonexistent tenant is idempotent (`alreadyAbsent: true`).
+//
+// #7539 follow-up: when `provisioned` handles are omitted (e.g. caller restarted and lost in-memory IDs),
+// still ask the driver to tear down by tenant — never return `{ state: "gone" }` without driver calls.
 
 import { ControlPlaneError, isControlPlaneError } from "./errors.js";
 import type { TenantProvisioningDriver } from "./tenant-provisioning-driver.js";
@@ -10,7 +13,8 @@ export type DeprovisionTenantOptions = {
   driver: TenantProvisioningDriver;
   /**
    * Optional handles from a prior `provisionTenant` result. When omitted, the driver is asked to
-   * destroy using best-effort absent-tolerant calls (fake driver returns `"absent"`).
+   * destroy/revoke by tenant with absent-tolerant calls (IDs left undefined so the driver resolves
+   * whatever it still has recorded for that tenant).
    */
   provisioned?:
     | {
@@ -23,6 +27,7 @@ export type DeprovisionTenantOptions = {
 
 /**
  * Tear down a hosted tenant through the driver seam. Idempotent when the tenant is already gone.
+ * Always invokes revoke/destroy on the driver — even when `provisioned` is omitted.
  */
 export async function deprovisionTenant(
   tenantInput: TenantRef,
@@ -31,41 +36,39 @@ export async function deprovisionTenant(
   const tenant = assertValidTenantRef(tenantInput);
   const { driver, provisioned } = options;
 
-  let secretsResult: "revoked" | "absent" = "absent";
-  let databaseResult: "destroyed" | "absent" = "absent";
-  let containerResult: "destroyed" | "absent" = "absent";
+  let secretsResult: "revoked" | "absent";
+  let databaseResult: "destroyed" | "absent";
+  let containerResult: "destroyed" | "absent";
 
-  if (provisioned) {
-    try {
-      secretsResult = await driver.revokeSecrets(tenant, provisioned.secrets.enrollId);
-    } catch (error) {
-      if (isControlPlaneError(error)) throw error;
-      throw new ControlPlaneError(
-        "secrets_revoke_failed",
-        `Secrets revoke failed for ${tenant.product}/${tenant.tenantId}`,
-        error,
-      );
-    }
-    try {
-      databaseResult = await driver.destroyDatabase(tenant, provisioned.databaseId);
-    } catch (error) {
-      if (isControlPlaneError(error)) throw error;
-      throw new ControlPlaneError(
-        "database_destroy_failed",
-        `Database destroy failed for ${tenant.product}/${tenant.tenantId}`,
-        error,
-      );
-    }
-    try {
-      containerResult = await driver.destroyContainer(tenant, provisioned.containerId);
-    } catch (error) {
-      if (isControlPlaneError(error)) throw error;
-      throw new ControlPlaneError(
-        "container_destroy_failed",
-        `Container destroy failed for ${tenant.product}/${tenant.tenantId}`,
-        error,
-      );
-    }
+  try {
+    secretsResult = await driver.revokeSecrets(tenant, provisioned?.secrets.enrollId);
+  } catch (error) {
+    if (isControlPlaneError(error)) throw error;
+    throw new ControlPlaneError(
+      "secrets_revoke_failed",
+      `Secrets revoke failed for ${tenant.product}/${tenant.tenantId}`,
+      error,
+    );
+  }
+  try {
+    databaseResult = await driver.destroyDatabase(tenant, provisioned?.databaseId);
+  } catch (error) {
+    if (isControlPlaneError(error)) throw error;
+    throw new ControlPlaneError(
+      "database_destroy_failed",
+      `Database destroy failed for ${tenant.product}/${tenant.tenantId}`,
+      error,
+    );
+  }
+  try {
+    containerResult = await driver.destroyContainer(tenant, provisioned?.containerId);
+  } catch (error) {
+    if (isControlPlaneError(error)) throw error;
+    throw new ControlPlaneError(
+      "container_destroy_failed",
+      `Container destroy failed for ${tenant.product}/${tenant.tenantId}`,
+      error,
+    );
   }
 
   const alreadyAbsent =

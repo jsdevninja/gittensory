@@ -76,10 +76,67 @@ test("#7524: deprovision of a nonexistent tenant is idempotent (alreadyAbsent)",
   assert.equal(gone.alreadyAbsent, true);
 });
 
-test("#7524: deprovision without provisioned handles reports alreadyAbsent", async () => {
+test("REGRESSION (#7539): deprovision without provisioned handles still asks the driver to tear down live resources", async () => {
+  const broker = createFakeTenantSecretBroker();
+  const driver = createFakeTenantProvisioningDriver({ broker, nowMs: () => 99 });
+  const tenant = { tenantId: "lost-handles", product: "orb" };
+  const provisioned = await provisionTenant(tenant, { driver });
+  assert.equal(driver.containerExists(tenant), true);
+  assert.equal(driver.databaseExists(tenant), true);
+
+  // Caller lost in-memory handles (e.g. process restart) but the driver still knows the tenant.
+  const calls = { revoke: 0, destroyDb: 0, destroyCtr: 0 };
+  const baseRevoke = driver.revokeSecrets.bind(driver);
+  const baseDestroyDb = driver.destroyDatabase.bind(driver);
+  const baseDestroyCtr = driver.destroyContainer.bind(driver);
+  driver.revokeSecrets = async (t, enrollId) => {
+    calls.revoke += 1;
+    return baseRevoke(t, enrollId);
+  };
+  driver.destroyDatabase = async (t, databaseId) => {
+    calls.destroyDb += 1;
+    return baseDestroyDb(t, databaseId);
+  };
+  driver.destroyContainer = async (t, containerId) => {
+    calls.destroyCtr += 1;
+    return baseDestroyCtr(t, containerId);
+  };
+
+  const gone = await deprovisionTenant(tenant, { driver });
+  assert.equal(gone.state, "gone");
+  assert.equal(gone.alreadyAbsent, false);
+  assert.equal(calls.revoke, 1);
+  assert.equal(calls.destroyDb, 1);
+  assert.equal(calls.destroyCtr, 1);
+  assert.equal(driver.containerExists(tenant), false);
+  assert.equal(driver.databaseExists(tenant), false);
+  assert.equal(broker.enrollments.get(provisioned.secrets.enrollId)?.revoked, true);
+});
+
+test("REGRESSION (#7539): deprovision without handles on an empty tenant is absent-tolerant but still calls the driver", async () => {
   const driver = createFakeTenantProvisioningDriver();
+  const calls = { revoke: 0, destroyDb: 0, destroyCtr: 0 };
+  const baseRevoke = driver.revokeSecrets.bind(driver);
+  const baseDestroyDb = driver.destroyDatabase.bind(driver);
+  const baseDestroyCtr = driver.destroyContainer.bind(driver);
+  driver.revokeSecrets = async (t, enrollId) => {
+    calls.revoke += 1;
+    return baseRevoke(t, enrollId);
+  };
+  driver.destroyDatabase = async (t, databaseId) => {
+    calls.destroyDb += 1;
+    return baseDestroyDb(t, databaseId);
+  };
+  driver.destroyContainer = async (t, containerId) => {
+    calls.destroyCtr += 1;
+    return baseDestroyCtr(t, containerId);
+  };
+
   const gone = await deprovisionTenant({ tenantId: "x", product: "orb" }, { driver });
   assert.equal(gone.alreadyAbsent, true);
+  assert.equal(calls.revoke, 1);
+  assert.equal(calls.destroyDb, 1);
+  assert.equal(calls.destroyCtr, 1);
 });
 
 test("#7524: inject-secrets records #7174 secret_type via the broker seam", async () => {

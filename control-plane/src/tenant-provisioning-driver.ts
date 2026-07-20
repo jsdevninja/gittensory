@@ -26,9 +26,13 @@ export type TenantProvisioningDriver = {
     container: ContainerHandle,
     database: DatabaseHandle,
   ): Promise<SecretsHandle>;
-  destroyContainer(tenant: TenantRef, containerId: string): Promise<"destroyed" | "absent">;
-  destroyDatabase(tenant: TenantRef, databaseId: string): Promise<"destroyed" | "absent">;
-  revokeSecrets(tenant: TenantRef, enrollId: string): Promise<"revoked" | "absent">;
+  destroyContainer(tenant: TenantRef, containerId?: string): Promise<"destroyed" | "absent">;
+  destroyDatabase(tenant: TenantRef, databaseId?: string): Promise<"destroyed" | "absent">;
+  /**
+   * Revoke broker enrollments for the tenant. When `enrollId` is omitted, destroy whatever secrets
+   * the driver has recorded for this tenant (best-effort recovery after lost in-memory handles).
+   */
+  revokeSecrets(tenant: TenantRef, enrollId?: string): Promise<"revoked" | "absent">;
 };
 
 export type TenantProvisioningDriverDeps = {
