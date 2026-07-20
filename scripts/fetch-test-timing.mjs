@@ -21,51 +21,22 @@
 // that /test-analytics/ returns the identical PaginatedTestrunList wrapper and Testrun field shape
 // (filename, duration_seconds, commit_sha, etc.) -- a URL rename, not a schema change, so nothing else
 // in this file needed to change.
+//
+// #7457: aggregateByFile (and the retry-decision helper) are named exports so unit tests can cover the
+// per-commit-then-across-commits averaging without hitting the live Codecov driver. That driver runs
+// only when this file is the process entrypoint.
 
 import { writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 
-const MAX_PAGES = Number(process.argv.find((a) => a.startsWith("--max-pages="))?.split("=")[1] ?? 20);
-const outputArg = process.argv.find((a) => a.startsWith("--output="));
-const OUTPUT_PATH = outputArg ? outputArg.split("=")[1] : null;
+export const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 
-const repo = process.env.GITHUB_REPOSITORY;
-if (!repo) throw new Error("GITHUB_REPOSITORY is required (e.g. JSONbored/loopover)");
-const [owner, repoName] = repo.split("/");
-const token = process.env.CODECOV_API_TOKEN;
-if (!token) throw new Error("CODECOV_API_TOKEN is required");
-
-const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
-
-async function fetchWithRetry(url, maxAttempts = 4) {
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const response = await fetch(url, {
-      headers: { Authorization: `bearer ${token}`, Accept: "application/json" },
-    });
-    if (response.ok) return response.json();
-    if (!RETRYABLE_STATUS.has(response.status) || attempt === maxAttempts) {
-      throw new Error(`Codecov API error ${response.status} on ${url}: ${await response.text()}`);
-    }
-    const delayMs = 2 ** attempt * 1000;
-    console.warn(`Codecov API returned ${response.status} (attempt ${attempt}/${maxAttempts}), retrying in ${delayMs}ms`);
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
-  }
-  throw new Error("unreachable");
+/** True when a Codecov response status should be retried (and attempt budget remains). */
+export function shouldRetryCodecovFetch(status, attempt, maxAttempts) {
+  return RETRYABLE_STATUS.has(status) && attempt < maxAttempts;
 }
 
-async function fetchAllTestRuns() {
-  const rows = [];
-  let url = `https://api.codecov.io/api/v2/gh/${owner}/repos/${repoName}/test-analytics/?branch=main&page_size=100`;
-  let pages = 0;
-  while (url && pages < MAX_PAGES) {
-    const body = await fetchWithRetry(url);
-    rows.push(...body.results);
-    url = body.next;
-    pages += 1;
-  }
-  return { rows, truncated: url !== null };
-}
-
-function aggregateByFile(rows) {
+export function aggregateByFile(rows) {
   // Per-file duration must be averaged ACROSS RUNS, not just summed across every row: a file with many
   // test cases would otherwise dwarf a file with few, and a file that appears in many historical rows
   // (many runs) would inflate further with each additional run pooled in -- neither reflects "how long
@@ -88,21 +59,69 @@ function aggregateByFile(rows) {
   return averages;
 }
 
-const { rows, truncated } = await fetchAllTestRuns();
-const averageSecondsByFile = aggregateByFile(rows);
+async function fetchWithRetry(url, token, maxAttempts = 4) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetch(url, {
+      headers: { Authorization: `bearer ${token}`, Accept: "application/json" },
+    });
+    if (response.ok) return response.json();
+    if (!shouldRetryCodecovFetch(response.status, attempt, maxAttempts)) {
+      throw new Error(`Codecov API error ${response.status} on ${url}: ${await response.text()}`);
+    }
+    const delayMs = 2 ** attempt * 1000;
+    console.warn(`Codecov API returned ${response.status} (attempt ${attempt}/${maxAttempts}), retrying in ${delayMs}ms`);
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  throw new Error("unreachable");
+}
 
-const report = {
-  fetchedAt: new Date().toISOString(),
-  sourceRowCount: rows.length,
-  fileCount: Object.keys(averageSecondsByFile).length,
-  truncated, // true if MAX_PAGES was hit before the API ran out of pages -- more history existed than was pulled
-  averageSecondsByFile,
-};
+async function fetchAllTestRuns({ owner, repoName, token, maxPages }) {
+  const rows = [];
+  let url = `https://api.codecov.io/api/v2/gh/${owner}/repos/${repoName}/test-analytics/?branch=main&page_size=100`;
+  let pages = 0;
+  while (url && pages < maxPages) {
+    const body = await fetchWithRetry(url, token);
+    rows.push(...body.results);
+    url = body.next;
+    pages += 1;
+  }
+  return { rows, truncated: url !== null };
+}
 
-const json = JSON.stringify(report, null, 2);
-if (OUTPUT_PATH) {
-  writeFileSync(OUTPUT_PATH, json);
-  console.log(`Wrote ${report.fileCount} files' timing data (from ${report.sourceRowCount} rows) to ${OUTPUT_PATH}`);
-} else {
-  process.stdout.write(`${json}\n`);
+async function main() {
+  const maxPages = Number(process.argv.find((a) => a.startsWith("--max-pages="))?.split("=")[1] ?? 20);
+  const outputArg = process.argv.find((a) => a.startsWith("--output="));
+  const outputPath = outputArg ? outputArg.split("=")[1] : null;
+
+  const repo = process.env.GITHUB_REPOSITORY;
+  if (!repo) throw new Error("GITHUB_REPOSITORY is required (e.g. JSONbored/loopover)");
+  const [owner, repoName] = repo.split("/");
+  const token = process.env.CODECOV_API_TOKEN;
+  if (!token) throw new Error("CODECOV_API_TOKEN is required");
+
+  const { rows, truncated } = await fetchAllTestRuns({ owner, repoName, token, maxPages });
+  const averageSecondsByFile = aggregateByFile(rows);
+
+  const report = {
+    fetchedAt: new Date().toISOString(),
+    sourceRowCount: rows.length,
+    fileCount: Object.keys(averageSecondsByFile).length,
+    truncated, // true if MAX_PAGES was hit before the API ran out of pages -- more history existed than was pulled
+    averageSecondsByFile,
+  };
+
+  const json = JSON.stringify(report, null, 2);
+  if (outputPath) {
+    writeFileSync(outputPath, json);
+    console.log(`Wrote ${report.fileCount} files' timing data (from ${report.sourceRowCount} rows) to ${outputPath}`);
+  } else {
+    process.stdout.write(`${json}\n`);
+  }
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 }
