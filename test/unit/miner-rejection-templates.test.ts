@@ -3,6 +3,7 @@ import {
   REJECTION_REASONS,
   containsPrivateLanguage,
   renderRejectionMessage,
+  resolvePlaceholders,
 } from "../../packages/loopover-miner/lib/rejection-templates.js";
 
 const CONTEXT = { repoFullName: "JSONbored/loopover", prNumber: 2751 } as const;
@@ -63,5 +64,34 @@ describe("loopover-miner rejection templates (#2324)", () => {
     expect(renderRejectionMessage("gate_close", { repoFullName: "JSONbored/loopover.io_test-1", prNumber: 9 })).toContain(
       "JSONbored/loopover.io_test-1",
     );
+  });
+
+  it("rejects a non-string repoFullName", () => {
+    for (const bad of [null, undefined, 42, {}]) {
+      // @ts-expect-error — exercising the runtime guard against a non-string repoFullName
+      expect(() => renderRejectionMessage("gate_close", { repoFullName: bad, prNumber: 1 })).toThrow(
+        "invalid_repo_full_name",
+      );
+    }
+  });
+
+  describe("resolvePlaceholders (the defense-in-depth guard behind renderRejectionMessage)", () => {
+    it("renders every placeholder present in values", () => {
+      expect(resolvePlaceholders("PR #{prNumber} on {repoFullName}", { prNumber: 7, repoFullName: "o/r" })).toBe(
+        "PR #7 on o/r",
+      );
+    });
+
+    it("throws missing_placeholder for a template referencing a key values doesn't supply", () => {
+      expect(() => resolvePlaceholders("Hello {missingKey}", {})).toThrow("missing_placeholder:missingKey");
+    });
+
+    it("throws unresolved_placeholder when a substituted value's own text still looks like a placeholder", () => {
+      // Not reachable via renderRejectionMessage (GITHUB_FULL_NAME forbids `{`/`}` in repoFullName), but a real
+      // guard against any future caller of this pure helper that doesn't pre-validate its values the same way.
+      expect(() => resolvePlaceholders("{repoFullName}", { repoFullName: "{injected}" })).toThrow(
+        "unresolved_placeholder",
+      );
+    });
   });
 });

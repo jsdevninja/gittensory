@@ -67,4 +67,12 @@ describe("loopover-miner calibration types scaffold (#2332)", () => {
     expect(isCalibrationReport({ rows: [row], hasSignal: "yes" })).toBe(false);
     expect(isCalibrationReport({ rows: [{ ...row, project: "" }], hasSignal: true })).toBe(false);
   });
+
+  it("rejects null, non-object, and array values for every shape's own top-level guard", () => {
+    for (const bad of [null, "not-an-object", 42, ["array", "not", "object"]]) {
+      expect(isObservedOutcomeRecord(bad)).toBe(false);
+      expect(isCalibrationRow(bad)).toBe(false);
+      expect(isCalibrationReport(bad)).toBe(false);
+    }
+  });
 });

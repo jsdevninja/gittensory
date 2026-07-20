@@ -333,6 +333,16 @@ describe("runMinerAttempt (#2337) — the real create->review->gate->submit pipe
     expect(second.decision.stage).toBe("rate_limit");
   });
 
+  it("threads an explicit maxConsecutiveGateBlocks/sessionStartMs through, and tolerates an omitted draft", async () => {
+    const deps = baseDeps({ sessionStartMs: 9_000 });
+    const input = baseAttemptInput({ maxConsecutiveGateBlocks: 3 });
+    delete (input as { draft?: unknown }).draft;
+
+    const result = await runMinerAttempt(input, deps);
+
+    expect(result.outcome).toBe("submitted");
+  });
+
   it("fails closed on malformed input", async () => {
     const deps = baseDeps();
     await expect(runMinerAttempt(null as never, deps)).rejects.toThrow("invalid_attempt_input");

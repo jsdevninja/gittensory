@@ -176,6 +176,19 @@ describe("contribution-profile cache store (#6797)", () => {
       false,
     );
   });
+
+  it("purgeByRepo deletes only the given repo's cached profile and returns the count (#7091)", () => {
+    const store = tempStore();
+    store.put(profile("acme/widgets"), AT_MS);
+    store.put(profile("acme/other"), AT_MS);
+    expect(store.purgeByRepo("acme/widgets")).toBe(1);
+    expect(store.get("acme/widgets")).toBeNull();
+    expect(store.get("acme/other")).not.toBeNull();
+  });
+
+  it("purgeByRepo returns 0 when the repo has no cached profile", () => {
+    expect(tempStore().purgeByRepo("acme/widgets")).toBe(0);
+  });
 });
 
 function tempRootForDefault(): string {
