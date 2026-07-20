@@ -5,6 +5,7 @@ import {
   computePairwiseCalibrationScore,
   resolvePairwiseCalibrationSample,
   scoreObjectiveAnchor,
+  type PairwiseCalibrationWeights,
 } from "../dist/index.js";
 
 test("barrel: exports the pairwise calibration APIs (#3013)", () => {
@@ -144,12 +145,34 @@ test("computePairwiseCalibrationScore falls back to objective-anchor when every 
 });
 
 test("computePairwiseCalibrationScore normalizes invalid weights without producing NaN", () => {
+  const cases: PairwiseCalibrationWeights[] = [
+    { objectiveAnchor: Number.NaN, pairwiseJudge: 0 },
+    { objectiveAnchor: -1, pairwiseJudge: 0 },
+    { objectiveAnchor: 0, pairwiseJudge: Number.NaN },
+    { objectiveAnchor: 0, pairwiseJudge: -1 },
+    { objectiveAnchor: Number.NaN, pairwiseJudge: -1 },
+  ];
+  for (const weights of cases) {
+    const result = computePairwiseCalibrationScore({
+      objectiveAnchor: 1,
+      samples: [{ attempts: [{ replayFirst: "revealed_better", revealedFirst: "replay_better" }] }],
+      weights,
+    });
+    assert.deepEqual(result.weights, { objectiveAnchor: 0.5, pairwiseJudge: 0.5 });
+    assert.equal(result.compositeScore, 0.5);
+  }
+});
+
+test("REGRESSION (#7443): explicit all-zero weights fall back to objective-only, not the default 50/50 blend", () => {
   const result = computePairwiseCalibrationScore({
-    objectiveAnchor: 1,
-    samples: [{ attempts: [{ replayFirst: "revealed_better", revealedFirst: "replay_better" }] }],
-    weights: { objectiveAnchor: Number.NaN, pairwiseJudge: -1 },
+    objectiveAnchor: 0.42,
+    samples: [{ attempts: [{ replayFirst: "replay_better", revealedFirst: "revealed_better" }] }],
+    weights: { objectiveAnchor: 0, pairwiseJudge: 0 },
   });
 
-  assert.deepEqual(result.weights, { objectiveAnchor: 0.5, pairwiseJudge: 0.5 });
-  assert.equal(result.compositeScore, 0.5);
+  // Pairwise signal is present and real; an incomplete fix that only returns zeros from normalize would collapse
+  // compositeScore to 0. The usable-weights stage must instead fall back to objective-only.
+  assert.equal(result.pairwiseJudgeScore, 1);
+  assert.deepEqual(result.weights, { objectiveAnchor: 1, pairwiseJudge: 0 });
+  assert.equal(result.compositeScore, 0.42);
 });

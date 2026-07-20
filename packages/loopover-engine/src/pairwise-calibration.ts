@@ -64,7 +64,18 @@ function normalizePairwiseWeights(weights: PairwiseCalibrationWeights | undefine
     pairwiseJudge: finiteNonNegative(weights?.pairwiseJudge, DEFAULT_PAIRWISE_WEIGHTS.pairwiseJudge),
   };
   const total = raw.objectiveAnchor + raw.pairwiseJudge;
-  if (total <= 0) return DEFAULT_PAIRWISE_WEIGHTS;
+  if (total <= 0) {
+    // total <= 0 means every slot was an explicit 0 / NaN / negative (undefined would have taken the 0.5
+    // default and kept total > 0). Invalid values still recover to the default 50/50 blend; explicit
+    // well-formed zeros pass through so the usable-weights stage can fall back to objective-only
+    // (#7443 / #6170 — matches the three sibling calibration modules).
+    const objective = weights!.objectiveAnchor!;
+    const pairwise = weights!.pairwiseJudge!;
+    if (!Number.isFinite(objective) || objective < 0 || !Number.isFinite(pairwise) || pairwise < 0) {
+      return DEFAULT_PAIRWISE_WEIGHTS;
+    }
+    return { objectiveAnchor: 0, pairwiseJudge: 0 };
+  }
   return {
     objectiveAnchor: raw.objectiveAnchor / total,
     pairwiseJudge: raw.pairwiseJudge / total,
@@ -135,11 +146,25 @@ export function computePairwiseCalibrationScore(input: {
     .filter((score): score is number => score !== null);
   const pairwiseJudgeScore =
     stableScores.length === 0 ? null : roundScore(stableScores.reduce((sum, score) => sum + score, 0) / stableScores.length);
-  const weights = normalizePairwiseWeights(input.weights);
-  const compositeScore =
-    pairwiseJudgeScore === null
-      ? objectiveAnchorScore
-      : roundScore(objectiveAnchorScore * weights.objectiveAnchor + pairwiseJudgeScore * weights.pairwiseJudge);
+  // Second-stage usable-weights pass (mirrors reviewer-consensus-calibration.ts's buildRepoRewardRisk): zero out
+  // any component whose own signal is unavailable, then fall back to objective-only when nothing usable remains —
+  // including the explicit all-zero weight case that normalizePairwiseWeights now preserves (#7443 / #6170).
+  const rawWeights = normalizePairwiseWeights(input.weights);
+  const usableWeights = {
+    objectiveAnchor: rawWeights.objectiveAnchor,
+    pairwiseJudge: pairwiseJudgeScore === null ? 0 : rawWeights.pairwiseJudge,
+  };
+  const usableTotal = usableWeights.objectiveAnchor + usableWeights.pairwiseJudge;
+  const weights =
+    usableTotal <= 0
+      ? { objectiveAnchor: 1, pairwiseJudge: 0 }
+      : {
+          objectiveAnchor: usableWeights.objectiveAnchor / usableTotal,
+          pairwiseJudge: usableWeights.pairwiseJudge / usableTotal,
+        };
+  const compositeScore = roundScore(
+    objectiveAnchorScore * weights.objectiveAnchor + (pairwiseJudgeScore ?? 0) * weights.pairwiseJudge,
+  );
   const unstableSamples = samples.filter((sample) => !sample.stable).length;
   const exhaustedSamples = samples.filter((sample) => sample.exhausted).length;
   return {
