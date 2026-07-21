@@ -36,6 +36,8 @@ describe("kill-switch incident runbook (#4809)", () => {
     expect(runbook).toContain("15 minutes");
     expect(runbook).toContain("2 minutes");
     expect(runbook).toContain("#7180");
+    expect(runbook).toContain("LOOPOVER_ENABLE_PAGERDUTY");
+    expect(runbook).toContain("ams_kill_switch");
 
     expect(resolveMinerKillSwitch({ global: true, repoPaused: true })).toBe("global");
     expect(resolveMinerKillSwitch({ global: false, repoPaused: true })).toBe("repo");
@@ -76,5 +78,35 @@ describe("kill-switch incident runbook (#4809)", () => {
     const runbook = readFileSync(runbookPath, "utf8");
     expect(runbook).toMatch(/governor pause/);
     expect(runbook).toMatch(/do not reach for those commands/i);
+  });
+});
+
+describe("buildMinerKillSwitchPagerDutyAlert (#7666)", () => {
+  it("covers trip / resume / same-scope / fleet / blank-repo branches", async () => {
+    const { buildMinerKillSwitchPagerDutyAlert } = await import("../../packages/loopover-miner/lib/governor-kill-switch.js");
+
+    expect(
+      buildMinerKillSwitchPagerDutyAlert({ repoFullName: "acme/widgets", previousScope: "none", scope: "repo" }),
+    ).toMatchObject({
+      repoFullName: "acme/widgets",
+      severity: "critical",
+      dedupKey: "ams_kill_switch:repo:acme/widgets",
+    });
+
+    expect(buildMinerKillSwitchPagerDutyAlert({ previousScope: "none", scope: "global" })).toMatchObject({
+      repoFullName: "ams/fleet",
+      dedupKey: "ams_kill_switch:global:ams/fleet",
+    });
+
+    expect(buildMinerKillSwitchPagerDutyAlert({ repoFullName: null, previousScope: "none", scope: "global" })).toMatchObject({
+      repoFullName: "ams/fleet",
+    });
+
+    expect(buildMinerKillSwitchPagerDutyAlert({ repoFullName: "   ", previousScope: "none", scope: "global" })).toMatchObject({
+      repoFullName: "ams/fleet",
+    });
+
+    expect(buildMinerKillSwitchPagerDutyAlert({ repoFullName: "acme/widgets", previousScope: "repo", scope: "none" })).toBeNull();
+    expect(buildMinerKillSwitchPagerDutyAlert({ repoFullName: "acme/widgets", previousScope: "repo", scope: "repo" })).toBeNull();
   });
 });

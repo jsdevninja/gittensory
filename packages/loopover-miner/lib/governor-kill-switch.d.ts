@@ -19,11 +19,42 @@ export type RecordMinerKillSwitchTransitionInput = {
     previousScope: MinerKillSwitchScope;
     scope: MinerKillSwitchScope;
 };
+/** Pure page payload for a kill-switch TRIP (#7666). Null unless the transition is an engage into an active scope. */
+export type MinerKillSwitchPagerDutyAlert = {
+    repoFullName: string;
+    summary: string;
+    severity: "critical";
+    dedupKey: string;
+    customDetails: {
+        previousScope: MinerKillSwitchScope;
+        scope: MinerKillSwitchScope;
+        reason: string;
+    };
+};
+/**
+ * Build the PagerDuty alert for a kill-switch trip. Returns null on resume / same-scope so clearing a halt
+ * never wakes anyone. `repoFullName` falls back to `ams/fleet` for a global halt with no single-repo context.
+ */
+export declare function buildMinerKillSwitchPagerDutyAlert(input: {
+    repoFullName?: string | null | undefined;
+    previousScope: MinerKillSwitchScope;
+    scope: MinerKillSwitchScope;
+}): MinerKillSwitchPagerDutyAlert | null;
+export type NotifyMinerKillSwitchTrip = (alert: MinerKillSwitchPagerDutyAlert, env: Record<string, string | undefined>) => void | Promise<void>;
+/**
+ * Miner-side mirror of `triggerPagerDutyIncident` (#7666): same flag, same global routing key, same Events
+ * API v2 enqueue. No D1 audit/cooldown (miner has no Worker Env) -- PagerDuty's own `dedup_key` still
+ * coalesces duplicate incidents. Best-effort: never throws.
+ */
+export declare function notifyMinerKillSwitchPagerDuty(alert: MinerKillSwitchPagerDutyAlert, env?: Record<string, string | undefined>): Promise<void>;
 /**
  * Record a kill-switch state transition to the governor ledger. No-op (returns null, appends nothing) when the
- * scope has not actually changed since the previous check — callers own tracking the previous scope (in-memory
- * or persisted); this module holds no state of its own.
+ * scope has not actually changed since the previous check -- callers own tracking the previous scope (in-memory
+ * or persisted); this module holds no state of its own. On a trip, also fires the PagerDuty page (#7666)
+ * unless `notify` is overridden (tests) or the integration flag/key is unset.
  */
 export declare function recordMinerKillSwitchTransition(input: RecordMinerKillSwitchTransitionInput, options?: {
     append?: (event: AppendGovernorEventInput) => GovernorLedgerEntry;
+    notify?: NotifyMinerKillSwitchTrip;
+    env?: Record<string, string | undefined>;
 }): GovernorLedgerEntry | null;

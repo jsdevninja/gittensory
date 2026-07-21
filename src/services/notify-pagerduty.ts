@@ -218,3 +218,8 @@ export async function triggerPagerDutyIncident(
     await auditPagerDutyNotification(env, { repoFullName: params.repoFullName, dedupKey: params.dedupKey }, "error", message.slice(0, 280));
   }
 }
+
+// AMS miner kill-switch trips (#7666) page from packages/loopover-miner/lib/governor-kill-switch.ts
+// (recordMinerKillSwitchTransition). That path mirrors this module's Events API v2 contract (flag +
+// routing key + enqueue URL + dedup_key). There is no hosted AMS trip call site today, so do not add an
+// unused wrapper here.

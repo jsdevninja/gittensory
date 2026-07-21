@@ -2,6 +2,13 @@
 // env, or for one repo, via its .loopover-miner.yml MinerGoalSpec) and records STATE TRANSITIONS to the
 // append-only governor ledger. Every-check allow/deny recording for a real write action is the fail-closed
 // Governor chokepoint's job (#2340), which consults this module first in its "safest wins" precedence.
+//
+// #7666: a TRIP also pages via the same PagerDuty Events API v2 contract ORB uses in
+// `src/services/notify-pagerduty.ts` (LOOPOVER_ENABLE_PAGERDUTY + PAGERDUTY_ROUTING_KEY + enqueue URL +
+// dedup_key). AMS trips only exist in this miner process (no hosted trip call site / no Worker Env), so
+// the page lives here rather than calling `triggerPagerDutyIncident` directly. Resume stays silent —
+// clearing a halt must not wake anyone. Best-effort and never throws: a paging failure must never block
+// the ledger write or the mid-attempt abandon that depends on it.
 
 import {
   buildMinerKillSwitchTransitionGovernorLedgerEvent,
@@ -41,17 +48,147 @@ export type RecordMinerKillSwitchTransitionInput = {
   scope: MinerKillSwitchScope;
 };
 
+/** Pure page payload for a kill-switch TRIP (#7666). Null unless the transition is an engage into an active scope. */
+export type MinerKillSwitchPagerDutyAlert = {
+  repoFullName: string;
+  summary: string;
+  severity: "critical";
+  dedupKey: string;
+  customDetails: {
+    previousScope: MinerKillSwitchScope;
+    scope: MinerKillSwitchScope;
+    reason: string;
+  };
+};
+
+/**
+ * Build the PagerDuty alert for a kill-switch trip. Returns null on resume / same-scope so clearing a halt
+ * never wakes anyone. `repoFullName` falls back to `ams/fleet` for a global halt with no single-repo context.
+ */
+export function buildMinerKillSwitchPagerDutyAlert(input: {
+  repoFullName?: string | null | undefined;
+  previousScope: MinerKillSwitchScope;
+  scope: MinerKillSwitchScope;
+}): MinerKillSwitchPagerDutyAlert | null {
+  if (input.previousScope === input.scope) return null;
+  if (!isMinerKillSwitchActive(input.scope)) return null;
+  const repoFullName = (input.repoFullName ?? "").trim() || "ams/fleet";
+  const reason = `${input.scope}_kill_switch_engaged`;
+  return {
+    repoFullName,
+    summary:
+      input.scope === "global"
+        ? `AMS miner kill-switch engaged (global / fleet-wide)`
+        : `AMS miner kill-switch engaged (repo) for ${repoFullName}`,
+    severity: "critical",
+    dedupKey: `ams_kill_switch:${input.scope}:${repoFullName.toLowerCase()}`,
+    customDetails: { previousScope: input.previousScope, scope: input.scope, reason },
+  };
+}
+
+export type NotifyMinerKillSwitchTrip = (
+  alert: MinerKillSwitchPagerDutyAlert,
+  env: Record<string, string | undefined>,
+) => void | Promise<void>;
+
+const PAGERDUTY_EVENTS_URL = "https://events.pagerduty.com/v2/enqueue";
+const ROUTING_KEY_RE = /^[a-f0-9]{32}$/i;
+const TRUTHY_ENV = /^(1|true|yes|on)$/i;
+
+function envString(env: Record<string, string | undefined>, name: string): string | undefined {
+  const value = env[name];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function pagerDutyFailMessage(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error)).slice(0, 200);
+}
+
+function warnKillSwitchPagerDutyFailed(repo: string, error: unknown): void {
+  console.warn(JSON.stringify({ event: "kill_switch_pagerduty_failed", repo, message: pagerDutyFailMessage(error) }));
+}
+
+/**
+ * Miner-side mirror of `triggerPagerDutyIncident` (#7666): same flag, same global routing key, same Events
+ * API v2 enqueue. No D1 audit/cooldown (miner has no Worker Env) -- PagerDuty's own `dedup_key` still
+ * coalesces duplicate incidents. Best-effort: never throws.
+ */
+export async function notifyMinerKillSwitchPagerDuty(
+  alert: MinerKillSwitchPagerDutyAlert,
+  env: Record<string, string | undefined> = process.env,
+): Promise<void> {
+  if (!TRUTHY_ENV.test((env.LOOPOVER_ENABLE_PAGERDUTY ?? "").trim())) return;
+  const routingKey = envString(env, "PAGERDUTY_ROUTING_KEY");
+  if (!routingKey || !ROUTING_KEY_RE.test(routingKey)) return;
+
+  try {
+    const response = await fetch(PAGERDUTY_EVENTS_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        routing_key: routingKey,
+        event_action: "trigger",
+        dedup_key: alert.dedupKey,
+        payload: {
+          summary: alert.summary.slice(0, 1024),
+          source: "loopover-miner",
+          severity: alert.severity,
+          timestamp: new Date().toISOString(),
+          component: alert.repoFullName,
+          custom_details: alert.customDetails,
+        },
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) {
+      console.warn(
+        JSON.stringify({
+          event: "kill_switch_pagerduty_failed",
+          repo: alert.repoFullName,
+          status: response.status,
+        }),
+      );
+    }
+  } catch (error) {
+    warnKillSwitchPagerDutyFailed(alert.repoFullName, error);
+  }
+}
+
 /**
  * Record a kill-switch state transition to the governor ledger. No-op (returns null, appends nothing) when the
- * scope has not actually changed since the previous check — callers own tracking the previous scope (in-memory
- * or persisted); this module holds no state of its own.
+ * scope has not actually changed since the previous check -- callers own tracking the previous scope (in-memory
+ * or persisted); this module holds no state of its own. On a trip, also fires the PagerDuty page (#7666)
+ * unless `notify` is overridden (tests) or the integration flag/key is unset.
  */
 export function recordMinerKillSwitchTransition(
   input: RecordMinerKillSwitchTransitionInput,
-  options: { append?: (event: AppendGovernorEventInput) => GovernorLedgerEntry } = {},
+  options: {
+    append?: (event: AppendGovernorEventInput) => GovernorLedgerEntry;
+    notify?: NotifyMinerKillSwitchTrip;
+    env?: Record<string, string | undefined>;
+  } = {},
 ): GovernorLedgerEntry | null {
   const event = buildMinerKillSwitchTransitionGovernorLedgerEvent(input);
   if (!event) return null;
   const append = options.append ?? appendGovernorEvent;
-  return append(event as AppendGovernorEventInput);
+  const recorded = append(event as AppendGovernorEventInput);
+
+  const alert = buildMinerKillSwitchPagerDutyAlert({
+    repoFullName: input.repoFullName,
+    previousScope: input.previousScope,
+    scope: input.scope,
+  });
+  if (alert) {
+    const notify = options.notify ?? notifyMinerKillSwitchPagerDuty;
+    const env = options.env ?? process.env;
+    try {
+      void Promise.resolve(notify(alert, env)).catch((error: unknown) => {
+        warnKillSwitchPagerDutyFailed(alert.repoFullName, error);
+      });
+    } catch (error) {
+      warnKillSwitchPagerDutyFailed(alert.repoFullName, error);
+    }
+  }
+
+  return recorded;
 }
