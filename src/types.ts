@@ -450,6 +450,21 @@ export type RepoPoolAssociation = {
 };
 
 /**
+ * Customer-funded pool association for a registered repo (#7679, Wave 5's "two demographics" per #4778). The
+ * parallel to {@link RepoPoolAssociation} for a pool funded by a paying CUSTOMER rather than a Bittensor subnet:
+ * both pay out to gittensor-registered contributors as emissions (same payout mechanism), but the funding source
+ * differs — so `subnetId` (meaningless for a non-subnet customer) is replaced by the funding customer's account.
+ * Kept a separate type rather than an optional `subnetId` on `RepoPoolAssociation` so the two funding models stay
+ * structurally distinct. Both fields are required for a valid association — a partial one (only one field) is
+ * treated as no association, so a repo with no customer-pool fields round-trips byte-identical to today. Read it
+ * via `getCustomerPoolAssociation`.
+ */
+export type CustomerPoolAssociation = {
+  poolId: string;
+  funderAccount: string;
+};
+
+/**
  * Repo provisioning origin (#7589's BYOR+APR epic; #7590's hosting decision). BYOR = a customer's own
  * pre-existing repo; APR = a loopover-provisioned repo, carrying the GitHub org it was created under. Present
  * only when the registry explicitly records it — absent means "not yet known / pre-dates this field", NOT a
@@ -473,6 +488,8 @@ export type RegistryRepoConfig = {
   timeDecay?: RepoTimeDecayOverrides | null;
   /** Subnet-funded pool association (#6099); null/absent = an organic repo with no funding pool (#6320). */
   poolAssociation?: RepoPoolAssociation | null;
+  /** Customer-funded pool association (#7679); null/absent = a repo with no customer-funded pool. */
+  customerPoolAssociation?: CustomerPoolAssociation | null;
   /** Repo provisioning origin (#7589); null/absent = pre-dates this field, unchanged behavior (do NOT assume BYOR). */
   repoOrigin?: RepoOrigin | null;
   raw: Record<string, JsonValue>;
@@ -1188,6 +1205,13 @@ export type RepositorySettings = {
    *  force -- a `mergeable_state: clean` read is trusted exactly as it is today. Layered like every other
    *  settings field (`.loopover.yml` `gate.requireFreshRebaseWindow` > DB > `null`). */
   requireFreshRebaseWindowMinutes?: number | null | undefined;
+  /** Stale-base auto-rebase threshold (#review-grounding stale-base fact): a commit count. When the repo's
+   *  current default branch is at least this many commits ahead of a PR's own base commit, the pre-review
+   *  readiness gate (`prReadyForReview`) forces an `update_branch`, independent of GitHub's own
+   *  `mergeableState: "behind"` signal (which only fires when the repo's branch protection requires branches
+   *  to be up to date before merging). `null`/undefined (default) = never force via this path. Layered like
+   *  every other settings field (`.loopover.yml` `gate.staleBaseAheadByThreshold` > DB > `null`). */
+  staleBaseAheadByThreshold?: number | null | undefined;
   /** Account-age throttle (#2561, anti-abuse): an account younger than this many days gets the
    *  {@link newAccountLabel} and a tighter effective contributor cap — friction/visibility, NEVER an
    *  automatic close on account age alone. `null`/undefined (default) = off. Never fires for the repo
