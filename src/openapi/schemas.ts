@@ -120,6 +120,15 @@ export const PublicStatsSchema = z
         accuracyPct: z.number().nullable(),
       }),
     ),
+    /** Live, fleet-wide reversal-grounded accuracy across REGISTERED self-hosted ORB instances -- unlike
+     *  totals.accuracyPct (own-ledger, frozen as of the self-host cutover), this keeps growing with the fleet.
+     *  accuracyPct is null until at least one registered instance clears the fleet's own minimum-volume bar. */
+    fleetAccuracy: z.object({
+      accuracyPct: z.number().nullable(),
+      instanceCount: z.number(),
+      windowDays: z.number(),
+      gamingFlagsCaught: z.number(),
+    }),
     /** Trailing weekly history of totals.accuracyPct's SAME formula (#4447) -- null counts/accuracyPct on a week means
      *  too few decided (merged+closed) PRs to publish meaningful or non-identifying details. */
     accuracyTrend: z.array(
@@ -895,6 +904,12 @@ export const RepositorySettingsSchema = z
     moderationRules: z.array(z.enum(["contributor_cap", "blacklist", "review_nag", "review_evasion"])).optional(),
     moderationWarningLabel: z.string().optional(),
     moderationBannedLabel: z.string().optional(),
+    fairnessAnalyticsMode: z
+      .enum(["inherit", "off", "enabled"])
+      .optional()
+      .describe(
+        "Per-repo participation in cross-repo contributor fairness/accuracy analytics -- 'off' excludes this repo's gate decisions and moderation history from every aggregation, independent of whether the internal fairness-analytics routes are enabled fleet-wide.",
+      ),
     skipAutomationBotAuthors: z.enum(["inherit", "off", "enabled"]).optional(),
     duplicateWinnerMode: z.enum(["inherit", "off", "enabled"]).optional(),
     openPrFileCollisionMode: z.enum(["inherit", "off", "enabled"]).optional(),
