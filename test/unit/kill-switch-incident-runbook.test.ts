@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   MINER_KILL_SWITCH_ENV_VAR,
+  buildMinerKillSwitchPagerDutyAlert,
   buildMinerKillSwitchTransitionGovernorLedgerEvent,
   resolveMinerKillSwitch,
 } from "../../packages/loopover-engine/src/governor/kill-switch";
@@ -78,5 +79,41 @@ describe("kill-switch incident runbook (#4809)", () => {
     const runbook = readFileSync(runbookPath, "utf8");
     expect(runbook).toMatch(/governor pause/);
     expect(runbook).toMatch(/do not reach for those commands/i);
+  });
+});
+
+describe("buildMinerKillSwitchPagerDutyAlert under vitest (#7666)", () => {
+  it("covers trip / resume / same-scope / fleet / blank-repo branches", () => {
+    expect(
+      buildMinerKillSwitchPagerDutyAlert({ repoFullName: "acme/widgets", previousScope: "none", scope: "repo" }),
+    ).toMatchObject({
+      repoFullName: "acme/widgets",
+      severity: "critical",
+      dedupKey: "ams_kill_switch:repo:acme/widgets",
+    });
+
+    expect(
+      buildMinerKillSwitchPagerDutyAlert({ previousScope: "none", scope: "global" }),
+    ).toMatchObject({
+      repoFullName: "ams/fleet",
+      dedupKey: "ams_kill_switch:global:ams/fleet",
+      summary: expect.stringContaining("fleet-wide"),
+    });
+
+    expect(
+      buildMinerKillSwitchPagerDutyAlert({ repoFullName: null, previousScope: "none", scope: "global" }),
+    ).toMatchObject({ repoFullName: "ams/fleet" });
+
+    expect(
+      buildMinerKillSwitchPagerDutyAlert({ repoFullName: "   ", previousScope: "none", scope: "global" }),
+    ).toMatchObject({ repoFullName: "ams/fleet" });
+
+    expect(
+      buildMinerKillSwitchPagerDutyAlert({ repoFullName: "acme/widgets", previousScope: "repo", scope: "none" }),
+    ).toBeNull();
+
+    expect(
+      buildMinerKillSwitchPagerDutyAlert({ repoFullName: "acme/widgets", previousScope: "repo", scope: "repo" }),
+    ).toBeNull();
   });
 });
