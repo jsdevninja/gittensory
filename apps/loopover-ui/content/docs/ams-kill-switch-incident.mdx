@@ -52,10 +52,13 @@ Flag a misbehaving loop from any of:
 3. Fleet observability — error-rate spikes, abnormal claim/submission patterns, elevated
    `consecutive_failures` / rejection-reason clustering, or an explicit customer/support escalation
    (see the rented-loop escalation path from #4806).
-4. **Automated PagerDuty page** (#7666) — when `LOOPOVER_ENABLE_PAGERDUTY` is on and a routing key
-   is configured, a kill-switch **trip** (engage) fires an Events API v2 page via the same path ORB
-   uses (`notify-pagerduty`). A resume does not page. Treat an `ams_kill_switch:*` incident as
-   "operator already needed on the page" and start the 15-minute response clock immediately.
+4. **Automated PagerDuty page** (#7666) — when `LOOPOVER_ENABLE_PAGERDUTY` is on and
+   `PAGERDUTY_ROUTING_KEY` is configured in the **miner** process, a kill-switch **trip** (engage)
+   fires an Events API v2 page using the same flag / routing-key / enqueue contract as ORB's
+   `notify-pagerduty` module. A resume does not page. The miner has no D1-backed severity floor or
+   cooldown (PagerDuty's own `dedup_key` still coalesces duplicate incidents). Treat an
+   `ams_kill_switch:*` incident as "operator already needed on the page" and start the 15-minute
+   response clock immediately.
 
 **Triage before acting:** decide one-repo vs fleet-wide. Prefer the narrowest scope that stops the
 harm so one bad tenant does not force an unnecessary global halt.

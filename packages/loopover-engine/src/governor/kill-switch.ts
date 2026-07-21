@@ -8,8 +8,8 @@
 // DETECTOR ONLY — no IO, no persistence. Composing this with the other pure calculators into one fail-closed
 // allow/deny verdict (and recording every CHECK, not just a transition) is the Governor chokepoint's job
 // (#2340), which consults this module first in its "safest wins" precedence. Paging on a trip (#7666) is also
-// an IO concern: this module only builds the pure PagerDuty alert payload; the miner IO seam /
-// `src/services/notify-pagerduty.ts` fire the Events API call.
+// an IO concern: this module only builds the pure PagerDuty alert payload; the miner IO seam fires the
+// Events API call (mirroring `src/services/notify-pagerduty.ts`'s contract — AMS trips have no hosted path).
 
 import type { GovernorLedgerEvent } from "../governor-ledger.js";
 
@@ -80,8 +80,8 @@ export function buildMinerKillSwitchTransitionGovernorLedgerEvent(input: {
  * Pure page payload for a kill-switch TRIP (#7666). Returns `null` when the transition is not a trip
  * (no-op same-scope, or a resume) — paging wakes humans for engage, not for clear. `repoFullName` falls
  * back to `ams/fleet` for a global halt with no single-repo context so routing still resolves against the
- * operator's global PagerDuty key. Consumers (miner IO seam / hosted `notify-pagerduty`) own the actual
- * Events API call — this module stays detector-only.
+ * operator's global PagerDuty key. Consumers (miner IO seam) own the actual Events API call — there is no
+ * hosted AMS trip path today, so this module stays detector-only.
  */
 export type MinerKillSwitchPagerDutyAlert = {
   repoFullName: string;

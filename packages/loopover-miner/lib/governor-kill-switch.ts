@@ -3,10 +3,12 @@
 // append-only governor ledger. Every-check allow/deny recording for a real write action is the fail-closed
 // Governor chokepoint's job (#2340), which consults this module first in its "safest wins" precedence.
 //
-// #7666: a TRIP also pages via the same PagerDuty Events API v2 path ORB uses (`src/services/notify-pagerduty.ts`
-// / LOOPOVER_ENABLE_PAGERDUTY + PAGERDUTY_ROUTING_KEY), so a kill-switch engage is not ledger-only. Resume
-// stays silent -- clearing a halt must not wake anyone. The page is best-effort and never throws: a paging
-// failure must never block the ledger write or the mid-attempt abandon that depends on it.
+// #7666: a TRIP also pages via the same PagerDuty Events API v2 contract ORB uses in
+// `src/services/notify-pagerduty.ts` (LOOPOVER_ENABLE_PAGERDUTY + PAGERDUTY_ROUTING_KEY + enqueue URL +
+// dedup_key). AMS trips only exist in this miner process (no hosted trip call site / no Worker Env), so
+// the page lives here rather than calling `triggerPagerDutyIncident` directly. Resume stays silent —
+// clearing a halt must not wake anyone. Best-effort and never throws: a paging failure must never block
+// the ledger write or the mid-attempt abandon that depends on it.
 
 import {
   buildMinerKillSwitchPagerDutyAlert,
