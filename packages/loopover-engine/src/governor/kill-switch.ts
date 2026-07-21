@@ -7,7 +7,9 @@
 //
 // DETECTOR ONLY — no IO, no persistence. Composing this with the other pure calculators into one fail-closed
 // allow/deny verdict (and recording every CHECK, not just a transition) is the Governor chokepoint's job
-// (#2340), which consults this module first in its "safest wins" precedence.
+// (#2340), which consults this module first in its "safest wins" precedence. Paging on a trip (#7666) is also
+// an IO concern: this module only builds the pure PagerDuty alert payload; the miner IO seam /
+// `src/services/notify-pagerduty.ts` fire the Events API call.
 
 import type { GovernorLedgerEvent } from "../governor-ledger.js";
 
@@ -71,5 +73,45 @@ export function buildMinerKillSwitchTransitionGovernorLedgerEvent(input: {
     decision: tripped ? "tripped" : "resumed",
     reason: tripped ? `${input.scope}_kill_switch_engaged` : `${input.previousScope}_kill_switch_cleared`,
     payload: { previousScope: input.previousScope, scope: input.scope },
+  };
+}
+
+/**
+ * Pure page payload for a kill-switch TRIP (#7666). Returns `null` when the transition is not a trip
+ * (no-op same-scope, or a resume) — paging wakes humans for engage, not for clear. `repoFullName` falls
+ * back to `ams/fleet` for a global halt with no single-repo context so routing still resolves against the
+ * operator's global PagerDuty key. Consumers (miner IO seam / hosted `notify-pagerduty`) own the actual
+ * Events API call — this module stays detector-only.
+ */
+export type MinerKillSwitchPagerDutyAlert = {
+  repoFullName: string;
+  summary: string;
+  severity: "critical";
+  dedupKey: string;
+  customDetails: {
+    previousScope: MinerKillSwitchScope;
+    scope: MinerKillSwitchScope;
+    reason: string;
+  };
+};
+
+export function buildMinerKillSwitchPagerDutyAlert(input: {
+  repoFullName?: string | null | undefined;
+  previousScope: MinerKillSwitchScope;
+  scope: MinerKillSwitchScope;
+}): MinerKillSwitchPagerDutyAlert | null {
+  if (input.previousScope === input.scope) return null;
+  if (!isMinerKillSwitchActive(input.scope)) return null;
+  const repoFullName = (input.repoFullName ?? "").trim() || "ams/fleet";
+  const reason = `${input.scope}_kill_switch_engaged`;
+  return {
+    repoFullName,
+    summary:
+      input.scope === "global"
+        ? `AMS miner kill-switch engaged (global / fleet-wide)`
+        : `AMS miner kill-switch engaged (repo) for ${repoFullName}`,
+    severity: "critical",
+    dedupKey: `ams_kill_switch:${input.scope}:${repoFullName.toLowerCase()}`,
+    customDetails: { previousScope: input.previousScope, scope: input.scope, reason },
   };
 }

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   isPagerDutyEnabled,
+  notifyMinerKillSwitchPagerDuty,
   resolvePagerDutyCooldownMinutes,
   resolvePagerDutyMinSeverity,
   resolvePagerDutyRoutingKey,
@@ -282,5 +283,45 @@ describe("triggerPagerDutyIncident — HTTP delivery", () => {
     expect(await pagerDutyAudit(env)).toEqual([expect.objectContaining({ outcome: "error", detail: expect.stringContaining("network down") })]);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("pagerduty_trigger_failed"));
     warn.mockRestore();
+  });
+});
+
+describe("notifyMinerKillSwitchPagerDuty (#7666)", () => {
+  it("pages through triggerPagerDutyIncident on a trip", async () => {
+    const calls = stubFetch(202);
+    const env = enabledEnv();
+    await notifyMinerKillSwitchPagerDuty(env, {
+      repoFullName: "acme/widgets",
+      previousScope: "none",
+      scope: "repo",
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.body).toMatchObject({
+      dedup_key: "ams_kill_switch:repo:acme/widgets",
+      payload: { severity: "critical", component: "acme/widgets", source: "loopover" },
+    });
+    expect(await pagerDutyAudit(env)).toEqual([expect.objectContaining({ outcome: "completed", detail: "triggered" })]);
+  });
+
+  it("is a no-op on resume so clearing a halt does not page", async () => {
+    const calls = stubFetch(202);
+    const env = enabledEnv();
+    await notifyMinerKillSwitchPagerDuty(env, {
+      repoFullName: "acme/widgets",
+      previousScope: "repo",
+      scope: "none",
+    });
+    expect(calls).toHaveLength(0);
+    expect(await pagerDutyAudit(env)).toHaveLength(0);
+  });
+
+  it("uses ams/fleet when a global trip has no repoFullName", async () => {
+    const calls = stubFetch(202);
+    const env = enabledEnv();
+    await notifyMinerKillSwitchPagerDuty(env, { previousScope: "none", scope: "global" });
+    expect(calls[0]?.body).toMatchObject({
+      dedup_key: "ams_kill_switch:global:ams/fleet",
+      payload: { component: "ams/fleet" },
+    });
   });
 });

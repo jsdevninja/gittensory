@@ -1,6 +1,8 @@
 import { countRecentAuditEventsForActorAndTarget, recordAuditEvent } from "../db/repositories";
 import { errorMessage } from "../utils/json";
 import { meetsSeverityThreshold, resolveSeverityThreshold, type LoopoverSeverity } from "./severity-threshold";
+import { buildMinerKillSwitchPagerDutyAlert } from "../../packages/loopover-engine/src/governor/kill-switch.js";
+import type { MinerKillSwitchScope } from "../../packages/loopover-engine/src/governor/kill-switch.js";
 
 // PagerDuty Events API v2 (https://developer.pagerduty.com/docs/events-api-v2/overview/). Experimental,
 // default-OFF (LOOPOVER_ENABLE_PAGERDUTY) — a self-host operator opts in per #4937's paging epic.
@@ -217,4 +219,29 @@ export async function triggerPagerDutyIncident(
     console.warn(JSON.stringify({ event: "pagerduty_trigger_failed", repo: params.repoFullName, message: message.slice(0, 200) }));
     await auditPagerDutyNotification(env, { repoFullName: params.repoFullName, dedupKey: params.dedupKey }, "error", message.slice(0, 280));
   }
+}
+
+/**
+ * Page on an AMS miner kill-switch TRIP (#7666), reusing {@link triggerPagerDutyIncident} so hosted/ORB and
+ * the miner share one Events API path (flag, routing key, severity floor, cooldown). No-op on resume /
+ * same-scope — only an engage wakes a human. Pure payload comes from `@loopover/engine`'s
+ * `buildMinerKillSwitchPagerDutyAlert`.
+ */
+export async function notifyMinerKillSwitchPagerDuty(
+  env: Env,
+  input: {
+    repoFullName?: string | null | undefined;
+    previousScope: MinerKillSwitchScope;
+    scope: MinerKillSwitchScope;
+  },
+): Promise<void> {
+  const alert = buildMinerKillSwitchPagerDutyAlert(input);
+  if (!alert) return;
+  await triggerPagerDutyIncident(env, {
+    repoFullName: alert.repoFullName,
+    summary: alert.summary,
+    severity: alert.severity,
+    dedupKey: alert.dedupKey,
+    customDetails: alert.customDetails,
+  });
 }

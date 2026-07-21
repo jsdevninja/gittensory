@@ -36,6 +36,8 @@ describe("kill-switch incident runbook (#4809)", () => {
     expect(runbook).toContain("15 minutes");
     expect(runbook).toContain("2 minutes");
     expect(runbook).toContain("#7180");
+    expect(runbook).toContain("LOOPOVER_ENABLE_PAGERDUTY");
+    expect(runbook).toContain("ams_kill_switch");
 
     expect(resolveMinerKillSwitch({ global: true, repoPaused: true })).toBe("global");
     expect(resolveMinerKillSwitch({ global: false, repoPaused: true })).toBe("repo");

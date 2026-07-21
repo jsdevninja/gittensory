@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   MINER_KILL_SWITCH_ENV_VAR,
+  buildMinerKillSwitchPagerDutyAlert,
   buildMinerKillSwitchTransitionGovernorLedgerEvent,
   isGlobalMinerKillSwitch,
   isMinerKillSwitchActive,
@@ -14,6 +15,7 @@ test("barrel: the public entrypoint re-exports the kill-switch primitive (#2341)
   assert.equal(typeof resolveMinerKillSwitch, "function");
   assert.equal(typeof isMinerKillSwitchActive, "function");
   assert.equal(typeof buildMinerKillSwitchTransitionGovernorLedgerEvent, "function");
+  assert.equal(typeof buildMinerKillSwitchPagerDutyAlert, "function");
   assert.equal(MINER_KILL_SWITCH_ENV_VAR, "LOOPOVER_MINER_KILL_SWITCH");
 });
 
@@ -104,4 +106,47 @@ test("buildMinerKillSwitchTransitionGovernorLedgerEvent: clearing the switch rec
     reason: "global_kill_switch_cleared",
     payload: { previousScope: "global", scope: "none" },
   });
+});
+
+test("buildMinerKillSwitchPagerDutyAlert: trip builds a critical page payload (#7666)", () => {
+  const alert = buildMinerKillSwitchPagerDutyAlert({
+    repoFullName: "acme/widgets",
+    previousScope: "none",
+    scope: "repo",
+  });
+  assert.deepEqual(alert, {
+    repoFullName: "acme/widgets",
+    summary: "AMS miner kill-switch engaged (repo) for acme/widgets",
+    severity: "critical",
+    dedupKey: "ams_kill_switch:repo:acme/widgets",
+    customDetails: { previousScope: "none", scope: "repo", reason: "repo_kill_switch_engaged" },
+  });
+});
+
+test("buildMinerKillSwitchPagerDutyAlert: global trip without a repo uses ams/fleet (#7666)", () => {
+  const alert = buildMinerKillSwitchPagerDutyAlert({
+    previousScope: "none",
+    scope: "global",
+  });
+  assert.equal(alert?.repoFullName, "ams/fleet");
+  assert.equal(alert?.dedupKey, "ams_kill_switch:global:ams/fleet");
+  assert.match(alert?.summary ?? "", /fleet-wide/);
+
+  const blankRepo = buildMinerKillSwitchPagerDutyAlert({
+    repoFullName: "   ",
+    previousScope: "none",
+    scope: "global",
+  });
+  assert.equal(blankRepo?.repoFullName, "ams/fleet");
+});
+
+test("buildMinerKillSwitchPagerDutyAlert: resume / same-scope are silent (#7666)", () => {
+  assert.equal(
+    buildMinerKillSwitchPagerDutyAlert({ repoFullName: "acme/widgets", previousScope: "repo", scope: "none" }),
+    null,
+  );
+  assert.equal(
+    buildMinerKillSwitchPagerDutyAlert({ repoFullName: "acme/widgets", previousScope: "repo", scope: "repo" }),
+    null,
+  );
 });
