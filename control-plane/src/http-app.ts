@@ -35,6 +35,25 @@ function safeRecord(record: Pick<TenantRegistryRecord, "tenant" | "product" | "s
   return { tenant: record.tenant, product: record.product, state: record.state };
 }
 
+/** Validated body of `POST /v1/tenants/rollout` (#4898): an explicit tenant-name list (no percentage/canary
+ *  selector — no such primitive exists elsewhere in this codebase to build on) plus the version to pin.
+ *  `pinnedVersion: null` is an explicit unpin (revert to the release channel's default). */
+type RolloutRequest = { names: string[]; pinnedVersion: string | null };
+
+function parseRolloutRequest(body: unknown): RolloutRequest | string {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return "body must be a JSON object";
+  const { names, pinnedVersion } = body as Record<string, unknown>;
+  if (!Array.isArray(names) || names.length === 0) return "names must be a non-empty array of tenant names";
+  if (!names.every((name): name is string => typeof name === "string" && name.trim() !== "")) {
+    return "names must be a non-empty array of tenant names";
+  }
+  if (new Set(names).size !== names.length) return "names must not repeat a tenant";
+  if (pinnedVersion !== null && (typeof pinnedVersion !== "string" || !pinnedVersion.trim())) {
+    return "pinnedVersion must be a non-blank string, or null to unpin";
+  }
+  return { names, pinnedVersion: pinnedVersion === null ? null : pinnedVersion.trim() };
+}
+
 export function createTenantHttpApp(deps: TenantHttpAppDeps): Hono {
   const app = new Hono();
 
@@ -78,6 +97,42 @@ export function createTenantHttpApp(deps: TenantHttpAppDeps): Hono {
   app.get("/v1/tenants", async (c) => {
     const records = await deps.registry.list();
     return c.json({ tenants: records.map((record) => ({ ...safeRecord(record), createdAt: record.createdAt, updatedAt: record.updatedAt })) });
+  });
+
+  // #4898: rollout/rollback = updating one or more tenants' pinnedVersion via an explicit list. Validates the
+  // WHOLE list before touching any record (all-or-nothing) so a typo'd name can never leave a fleet half
+  // rolled out; each updated tenant's container picks its new version up at its next (re)start
+  // (container-driver.ts's PINNED_VERSION_ENV_VAR). Every unlisted tenant is untouched by construction —
+  // the per-tenant-independence guarantee this endpoint exists to keep.
+  app.post("/v1/tenants/rollout", async (c) => {
+    const body: unknown = await c.req.json().catch(() => null);
+    if (body === null) return c.json({ error: "invalid_json" }, 400);
+    const parsed = parseRolloutRequest(body);
+    if (typeof parsed === "string") return c.json({ error: "invalid_request", message: parsed }, 400);
+
+    const existing = new Map<string, TenantRegistryRecord>();
+    for (const name of parsed.names) {
+      const record = await deps.registry.get(name);
+      if (!record) return c.json({ error: "tenant_not_found", message: `unknown tenant "${name}"` }, 404);
+      // A torn-down tenant has no container to ever read the pin — surfacing the mistake beats silently
+      // stamping a version onto a terminated record (same conflict posture as the create route's 409).
+      if (record.state === "torn down") return c.json({ error: "tenant_torn_down", message: `tenant "${name}" is torn down` }, 409);
+      existing.set(name, record);
+    }
+
+    const now = new Date().toISOString();
+    const updated: TenantRegistryRecord[] = [];
+    for (const name of parsed.names) {
+      const record = existing.get(name)!;
+      const next: TenantRegistryRecord = {
+        ...record,
+        tenant: { ...record.tenant, pinnedVersion: parsed.pinnedVersion },
+        updatedAt: now,
+      };
+      await deps.registry.upsert(next);
+      updated.push(next);
+    }
+    return c.json({ tenants: updated.map((record) => ({ ...safeRecord(record), createdAt: record.createdAt, updatedAt: record.updatedAt })) });
   });
 
   app.delete("/v1/tenants/:name", async (c) => {

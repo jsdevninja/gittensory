@@ -150,3 +150,15 @@ test("createKvTenantRegistry: list tolerates a key disappearing between the list
 
   assert.deepEqual(await registry.list(), []);
 });
+
+test("a tenant's pinnedVersion (#4898) survives the KV JSON round-trip, and its absence stays absent", async () => {
+  const kv = fakeKv();
+  const registry = createKvTenantRegistry(kv);
+
+  await registry.upsert({ ...recordFor("acme"), tenant: { name: "acme", pinnedVersion: "v1.4.2" } });
+  await registry.upsert(recordFor("beta"));
+
+  assert.deepEqual((await registry.get("acme"))?.tenant, { name: "acme", pinnedVersion: "v1.4.2" });
+  // A pre-#4898 record (no pinnedVersion key at all) reads back exactly as stored — unpinned.
+  assert.deepEqual((await registry.get("beta"))?.tenant, { name: "beta" });
+});
