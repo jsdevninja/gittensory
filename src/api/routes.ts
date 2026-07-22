@@ -45,6 +45,7 @@ import {
   getCommandUsefulnessSummary,
   getFreshOfficialMinerDetection,
   getIssue,
+  getInstallation,
   getInstallationHealth,
   getLatestRepoGithubTotalsSnapshot,
   getLatestScoringModelSnapshot,
@@ -210,6 +211,7 @@ import {
   loadControlPanelAccessScope,
   loadControlPanelRoleSummary,
 } from "../services/control-panel-roles";
+import { installationInAccessScope, scopeInstallationsAndHealth } from "./installation-self-service";
 import { runFindOpportunities, validateFindOpportunitiesInput, type FindOpportunitiesInput } from "../mcp/find-opportunities";
 import { runIssueRagRetrieval, validateIssueRagInput, type IssueRagInput } from "../mcp/issue-rag";
 import { buildBoundaryTestGenerationFinding, buildBoundaryTestGenerationSpec } from "../signals/boundary-test-generation";
@@ -2598,16 +2600,30 @@ export function createApp() {
     });
   });
 
-  app.get("/v1/installations", async (c) =>
-    c.json({
-      installations: await listInstallations(c.env),
-      health: (await listInstallationHealth(c.env)).map(enrichInstallationHealth),
-    }),
-  );
+  // #7661: tenant self-service for installation health/repair. Coarse path allowlist admits sessions;
+  // handlers below apply the same loadControlPanelAccessScope filter as /v1/app/maintainer-dashboard so
+  // a non-operator tenant never reads or refreshes another tenant's installation. Does not add bulk
+  // pause-all-repos controls (#7676).
+  app.get("/v1/installations", async (c) => {
+    const identity = await authenticateRequestIdentity(c);
+    /* v8 ignore next -- Protected middleware rejects unauthenticated private routes before this handler. */
+    if (!identity) return c.json({ error: "unauthorized" }, 401);
+    const summary = await getRoleSummaryForIdentity(c.env, identity);
+    if (!summary.roles.some((role) => ["maintainer", "owner", "operator"].includes(role))) return c.json({ error: "insufficient_role" }, 403);
+    const [allInstallations, allHealth] = await Promise.all([listInstallations(c.env), listInstallationHealth(c.env)]);
+    const scope = identity.kind === "session" && !summary.roles.includes("operator") ? await loadControlPanelAccessScope(c.env, identity.actor) : null;
+    const { installations, health } = scopeInstallationsAndHealth(allInstallations, allHealth, scope);
+    return c.json({
+      installations,
+      health: health.map(enrichInstallationHealth),
+    });
+  });
 
   app.get("/v1/installations/:id/health", async (c) => {
     const installationId = Number(c.req.param("id"));
     if (!Number.isFinite(installationId)) return c.json({ error: "invalid_installation_id" }, 400);
+    const forbidden = await requireInstallationSelfServiceAccess(c, installationId);
+    if (forbidden) return forbidden;
     const health = await getInstallationHealth(c.env, installationId);
     if (!health) return c.json({ error: "installation_health_not_found" }, 404);
     return c.json(enrichInstallationHealth(health));
@@ -2616,6 +2632,8 @@ export function createApp() {
   app.get("/v1/installations/:id/repair", async (c) => {
     const installationId = Number(c.req.param("id"));
     if (!Number.isFinite(installationId)) return c.json({ error: "invalid_installation_id" }, 400);
+    const forbidden = await requireInstallationSelfServiceAccess(c, installationId);
+    if (forbidden) return forbidden;
     const health = await getInstallationHealth(c.env, installationId);
     if (!health) return c.json({ error: "installation_health_not_found" }, 404);
     return c.json(await buildInstallationRepairDiagnostics(c.env, health));
@@ -2624,9 +2642,13 @@ export function createApp() {
   app.post("/v1/installations/:id/repair/refresh", async (c) => {
     const installationId = Number(c.req.param("id"));
     if (!Number.isFinite(installationId)) return c.json({ error: "invalid_installation_id" }, 400);
+    // Scope BEFORE refresh so a cross-tenant id never triggers GitHub/D1 mutation (#7661).
+    const forbidden = await requireInstallationSelfServiceAccess(c, installationId);
+    if (forbidden) return forbidden;
     const refreshed = await refreshInstallationHealthForInstallation(c.env, installationId);
     if (!refreshed) return c.json({ error: "installation_not_found" }, 404);
     const health = await getInstallationHealth(c.env, installationId);
+    /* v8 ignore next -- refreshInstallationHealthForInstallation persists health before returning. */
     if (!health) return c.json({ error: "installation_health_not_found" }, 404);
     return c.json({ ...(await buildInstallationRepairDiagnostics(c.env, health)), refreshed: true });
   });
@@ -6478,6 +6500,9 @@ function canSessionAccessPath(env: Env, identity: Extract<AuthIdentity, { kind: 
   // Contributor extension scope reaches only `/v1/extension/contributors/<login>/*`; the handler's
   // requireContributorAccess then enforces actor === login (self-only).
   if (isExtensionContributorContextPath(path) && isExtensionContributorScopedSession(identity)) return true;
+  // #7661: coarse path admission for tenant installation health/repair self-service. Handlers enforce
+  // loadControlPanelAccessScope (same filter as /v1/app/maintainer-dashboard) so cross-tenant access 403s.
+  if (isInstallationSelfServicePath(path)) return true;
   return false;
 }
 
@@ -6566,6 +6591,28 @@ function isRepoAiConfigPath(path: string): boolean {
 // same shape as isRepoAiConfigPath above, just for the new Linear key route.
 function isRepoLinearConfigPath(path: string): boolean {
   return /^\/v1\/repos\/[^/]+\/[^/]+\/linear-key$/.test(path);
+}
+
+// #7661: list + per-installation health/repair/refresh. Handlers apply maintainer-dashboard scoping.
+function isInstallationSelfServicePath(path: string): boolean {
+  return path === "/v1/installations" || /^\/v1\/installations\/[^/]+\/(?:health|repair(?:\/refresh)?)$/.test(path);
+}
+
+async function requireInstallationSelfServiceAccess(c: ProtectedRouteContext, installationId: number): Promise<Response | null> {
+  const identity = await authenticateRequestIdentity(c);
+  /* v8 ignore next -- Protected middleware rejects unauthenticated private routes before this guard. */
+  if (!identity) return c.json({ error: "unauthorized" }, 401);
+  const summary = await getRoleSummaryForIdentity(c.env, identity);
+  if (!summary.roles.some((role) => ["maintainer", "owner", "operator"].includes(role))) return c.json({ error: "insufficient_role" }, 403);
+  // Static tokens and operator sessions keep the fleet-wide view (same as /v1/app/maintainer-dashboard).
+  if (identity.kind !== "session" || summary.roles.includes("operator")) return null;
+  const scope = await loadControlPanelAccessScope(c.env, identity.actor);
+  const [installation, health] = await Promise.all([getInstallation(c.env, installationId), getInstallationHealth(c.env, installationId)]);
+  // Unknown id: let the handler 404. Existing-but-out-of-scope: hard 403 (cross-tenant).
+  if (!installation && !health) return null;
+  const accountLogin = installation?.accountLogin ?? health?.accountLogin;
+  if (installationInAccessScope(scope, installationId, accountLogin)) return null;
+  return c.json({ error: "forbidden_installation" }, 403);
 }
 
 async function authenticateRequestIdentity(c: ProtectedRouteContext): Promise<AuthIdentity | null> {

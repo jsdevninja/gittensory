@@ -15021,7 +15021,7 @@
       "get": {
         "responses": {
           "200": {
-            "description": "GitHub App installations and health",
+            "description": "GitHub App installations and health (fleet-wide for operators; tenant-scoped for non-operator sessions)",
             "content": {
               "application/json": {
                 "schema": {
@@ -15050,6 +15050,12 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient role"
           }
         },
         "security": [
@@ -15085,6 +15091,15 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid installation id"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Installation outside the caller's tenant scope"
           },
           "404": {
             "description": "Installation health not found"
@@ -15124,6 +15139,15 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid installation id"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Installation outside the caller's tenant scope"
+          },
           "404": {
             "description": "Installation health not found"
           }
@@ -15161,6 +15185,15 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid installation id"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Installation outside the caller's tenant scope"
           },
           "404": {
             "description": "Installation not found"

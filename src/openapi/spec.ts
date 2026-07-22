@@ -333,7 +333,7 @@ export function buildOpenApiSpec() {
     summary: "List GitHub App installations and their health",
     responses: {
       200: {
-        description: "GitHub App installations and health",
+        description: "GitHub App installations and health (fleet-wide for operators; tenant-scoped for non-operator sessions)",
         content: {
           "application/json": {
             schema: z.object({
@@ -343,6 +343,8 @@ export function buildOpenApiSpec() {
           },
         },
       },
+      401: { description: "Unauthorized" },
+      403: { description: "Insufficient role" },
     },
   });
   registry.registerPath({
@@ -352,6 +354,9 @@ export function buildOpenApiSpec() {
     request: { params: z.object({ id: z.string() }) },
     responses: {
       200: { description: "GitHub App installation health", content: { "application/json": { schema: InstallationHealthSchema } } },
+      400: { description: "Invalid installation id" },
+      401: { description: "Unauthorized" },
+      403: { description: "Installation outside the caller's tenant scope" },
       404: { description: "Installation health not found" },
     },
   });
@@ -362,6 +367,9 @@ export function buildOpenApiSpec() {
     request: { params: z.object({ id: z.string() }) },
     responses: {
       200: { description: "GitHub App installation repair diagnostics", content: { "application/json": { schema: InstallationRepairSchema } } },
+      400: { description: "Invalid installation id" },
+      401: { description: "Unauthorized" },
+      403: { description: "Installation outside the caller's tenant scope" },
       404: { description: "Installation health not found" },
     },
   });
@@ -372,6 +380,9 @@ export function buildOpenApiSpec() {
     request: { params: z.object({ id: z.string() }) },
     responses: {
       200: { description: "Refreshed GitHub App installation repair diagnostics", content: { "application/json": { schema: InstallationRepairSchema } } },
+      400: { description: "Invalid installation id" },
+      401: { description: "Unauthorized" },
+      403: { description: "Installation outside the caller's tenant scope" },
       404: { description: "Installation not found" },
     },
   });
